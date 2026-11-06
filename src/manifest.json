@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "Simulateur DSP F28335",
+  "short_name": "Simu F28335",
+  "version": "1.1.0",
+  "description": "Simulateur du DSP TMS320F28335 pour s'entraîner en C : éditeur, débogueur, GPIO, module ADC et capteurs virtuels.",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Simulateur DSP F28335",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "app.html?mode=panel"
+  },
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "sidePanel",
+    "contextMenus",
+    "clipboardWrite"
+  ],
+  "sandbox": {
+    "pages": [
+      "sim/sim.html"
+    ]
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'",
+    "sandbox": "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-eval'; child-src 'self'"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+D"
+      },
+      "description": "Ouvrir le simulateur"
+    }
+  }
+}

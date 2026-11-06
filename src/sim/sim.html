@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Simulateur DSP F28335</title>
+<link rel="stylesheet" href="sim.css">
+<link rel="stylesheet" href="ext.css">
+</head>
+<body>
+<div class="app" id="app">
+  <div class="menubar" role="menubar" aria-label="Menus">
+    <span class="brand"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="1" fill="#2B2F33"/><rect x="5.5" y="5.5" width="5" height="5" fill="#59616A"/><path d="M5 1v2M8 1v2M11 1v2M5 13v2M8 13v2M11 13v2M1 5h2M1 8h2M1 11h2M13 5h2M13 8h2M13 11h2" stroke="#B08A3E" stroke-width="1.2"/></svg>Simulateur DSP F28335</span>
+    <button class="mbtn" data-menu="file" aria-haspopup="true" aria-expanded="false">Fichier</button>
+    <button class="mbtn" data-menu="edit" aria-haspopup="true" aria-expanded="false">Édition</button>
+    <button class="mbtn" data-menu="project" aria-haspopup="true" aria-expanded="false">Projet</button>
+    <button class="mbtn" data-menu="run" aria-haspopup="true" aria-expanded="false">Exécuter</button>
+    <button class="mbtn" data-menu="window" aria-haspopup="true" aria-expanded="false">Fenêtre</button>
+    <button class="mbtn" data-menu="help" aria-haspopup="true" aria-expanded="false">Aide</button>
+    <span class="grow"></span>
+    <span class="target">Cible : TMS320F28335 simulé · GPIO + ADC</span>
+  </div>
+  <div class="toolbar" role="toolbar" aria-label="Outils">
+    <button class="tb" id="tb-new" title="Nouveau fichier" aria-label="Nouveau fichier"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 1.5h6l4 4v9H3z" fill="#FFF" stroke="#6B7280"/><path d="M9 1.5v4h4" fill="none" stroke="#6B7280"/><path d="M11.5 9v5M9 11.5h5" stroke="#2E9D3A" stroke-width="1.8"/></svg></button>
+    <span class="tsep"></span>
+    <button class="tb" id="tb-build" title="Build : compiler le projet (Ctrl+B)"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M1.8 13.2l6.4-6.4 1.7 1.7-6.4 6.4z" fill="#A0703A"/><path d="M6.6 3.4l3.1-1.9 4.6 4.6-1.8 3.1-1.6-1.6-1.4 1.4-2.9-2.9 1.4-1.4z" fill="#7B8591"/></svg><span class="lbl">Build</span></button>
+    <button class="tb" id="tb-debug" title="Debug : compiler, charger sur la carte et s'arrêter au début de main() (F11)"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><ellipse cx="8" cy="9.6" rx="4" ry="4.9" fill="#3A9A3A"/><circle cx="8" cy="4.2" r="2.2" fill="#2F7D2F"/><path d="M1.5 7h3M11.5 7h3M1.5 10.5h3M11.5 10.5h3M2.5 14l2.6-1.6M13.5 14l-2.6-1.6" stroke="#2F7D2F" stroke-width="1.3"/><path d="M8 6.2v8" stroke="#1C501C" stroke-width="1"/></svg><span class="lbl">Debug</span></button>
+    <span class="tsep"></span>
+    <button class="tb" id="tb-resume" title="Resume (F8)"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="2" y="3" width="2.6" height="10" fill="#D9A400"/><path d="M6.2 3l8 5-8 5z" fill="#2E9D3A"/></svg><span class="lbl">Resume</span></button>
+    <button class="tb" id="tb-suspend" title="Suspend (Alt+F8)" aria-label="Suspend"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="3.5" y="3" width="3" height="10" fill="#D9A400"/><rect x="9.5" y="3" width="3" height="10" fill="#D9A400"/></svg></button>
+    <button class="tb" id="tb-term" title="Terminate (Ctrl+F2)" aria-label="Terminate"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="1" fill="#D63B30"/></svg></button>
+    <span class="tsep"></span>
+    <button class="tb" id="tb-into" title="Step Into : pas à pas en entrant dans les fonctions (F5)" aria-label="Step Into"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 1.8v8.4" stroke="#D9A400" stroke-width="2"/><path d="M4.4 7.2L8 10.8l3.6-3.6" fill="none" stroke="#D9A400" stroke-width="2"/><rect x="4.5" y="12.6" width="7" height="2" fill="#7B8591"/></svg></button>
+    <button class="tb" id="tb-over" title="Step Over : ligne suivante, sans entrer dans les fonctions (F6)" aria-label="Step Over"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2.6 9.4a5.4 5.4 0 0 1 10.2-2.6" fill="none" stroke="#D9A400" stroke-width="2"/><path d="M14.2 3.2l-.3 4.8-4.4-1.6z" fill="#D9A400"/><rect x="4.5" y="12.6" width="7" height="2" fill="#7B8591"/></svg></button>
+    <button class="tb" id="tb-ret" title="Step Return : finir la fonction en cours (F7)" aria-label="Step Return"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 14.2V5.8" stroke="#D9A400" stroke-width="2"/><path d="M4.4 8.8L8 5.2l3.6 3.6" fill="none" stroke="#D9A400" stroke-width="2"/><rect x="4.5" y="1.4" width="7" height="2" fill="#7B8591"/></svg></button>
+    <span class="tsep"></span>
+    <button class="tb" id="tb-restart" title="Restart : reset de la carte et retour au début de main()" aria-label="Restart"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M12.6 8.4a4.6 4.6 0 1 1-1.4-3.6" fill="none" stroke="#2E9D3A" stroke-width="2"/><path d="M13.6 2.2v4.6H9z" fill="#2E9D3A"/></svg></button>
+    <span class="tsep"></span>
+    <label class="tb speed" title="Vitesse du temps simulé par rapport au temps réel"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="9" r="5.6" fill="none" stroke="#6B7280" stroke-width="1.5"/><path d="M8 9l3-3" stroke="#D63B30" stroke-width="1.6" stroke-linecap="round"/><path d="M6.5 2h3" stroke="#6B7280" stroke-width="1.5"/></svg><span class="lbl">Vitesse</span><select class="sm" id="tb-speed" aria-label="Vitesse de simulation"><option value="0.01">× 0,01</option><option value="0.1">× 0,1</option><option value="0.5">× 0,5</option><option value="1">× 1 (temps réel)</option><option value="2">× 2</option><option value="10">× 10</option></select></label>
+    <button class="tb" id="tb-prefs" title="Préférences : autocomplétion, éditeur, simulation, ADC… (Ctrl+,)"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 1.6l1.1 1.7 2-.4.4 2 1.7 1.1-.9 1.8.9 1.8-1.7 1.1-.4 2-2-.4L8 14.4l-1.1-1.7-2 .4-.4-2-1.7-1.1.9-1.8-.9-1.8 1.7-1.1.4-2 2 .4z" fill="#8A929C"/><circle cx="8" cy="8" r="2.3" fill="#FFF"/></svg><span class="lbl">Préférences</span></button>
+    <span class="grow"></span>
+    <div class="persp" role="group" aria-label="Perspective"><button id="pp-edit" aria-pressed="true">CCS Edit</button><button id="pp-debug" aria-pressed="false">CCS Debug</button></div>
+  </div>
+  <div class="extabs" role="tablist" aria-label="Projets" id="extabs"></div>
+  <div class="work" id="work">
+    <aside class="left" aria-label="Projets et débogage">
+      <section class="view" id="v-explorer">
+        <div class="vhead">Project Explorer<span class="grow"></span><button class="ib" id="ex-new" title="Nouveau fichier dans le projet actif">+ fichier</button></div>
+        <div class="vbody"><ul class="tree" id="tree" role="tree" aria-label="Projets"></ul></div>
+      </section>
+      <section class="view" id="v-debug">
+        <div class="vhead"><button class="ib" id="dbg-tog" aria-expanded="false" aria-label="Afficher la vue Debug">▸</button>Debug</div>
+        <div class="vbody"><ul class="stack" id="stack"></ul></div>
+      </section>
+    </aside>
+    <main class="center">
+      <section class="editor-area" aria-label="Éditeur">
+        <div class="ftabs" role="tablist" id="ftabs" aria-label="Fichiers ouverts"></div>
+        <div class="editor" id="editor">
+          <div class="gutter" id="gutter" aria-hidden="true"><div class="gin" id="gin"></div></div>
+          <div class="code" id="codebox"><div class="lay" id="lay"></div><pre id="hl" aria-hidden="true"></pre><textarea id="src" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Code C du fichier ouvert"></textarea></div>
+          <div class="empty-ed" id="emptyed" hidden><p>Aucun fichier ouvert. Ouvre un fichier dans le Project Explorer, ou crée-en un avec « + fichier ».</p></div>
+        </div>
+      </section>
+      <div class="hsplit" id="hsplit" role="separator" aria-orientation="horizontal" aria-label="Redimensionner"></div>
+      <section class="bottom" aria-label="Vues">
+        <div class="btabs" role="tablist" id="btabs" aria-label="Vues">
+          <button class="btab" role="tab" data-v="console">Console</button>
+          <button class="btab" role="tab" data-v="problems">Problèmes <span class="cnt" id="cnt-pb">0</span></button>
+          <button class="btab" role="tab" data-v="vars">Variables</button>
+          <button class="btab" role="tab" data-v="expr">Expressions</button>
+          <button class="btab" role="tab" data-v="regs">Registres</button>
+          <button class="btab" role="tab" data-v="scope">Analyseur logique</button>
+          <button class="btab" role="tab" data-v="adc">ADC</button>
+          <span class="grow"></span><span class="tools" id="btools"></span>
+        </div>
+        <div class="bpane" id="bp-console"><div class="console" id="console" role="log" aria-live="polite"></div></div>
+        <div class="bpane" id="bp-problems" hidden></div>
+        <div class="bpane" id="bp-vars" hidden></div>
+        <div class="bpane" id="bp-expr" hidden></div>
+        <div class="bpane" id="bp-regs" hidden></div>
+        <div class="bpane" id="bp-adc" hidden></div>
+        <div class="bpane" id="bp-scope" hidden>
+          <div class="scopebar">
+            <label for="sc-tb">Base de temps</label><select class="sm" id="sc-tb"></select>
+            <label for="sc-mode">Mode</label><select class="sm" id="sc-mode"><option value="roll">Défilement</option><option value="trig">Déclenché</option></select>
+            <label for="sc-trig">sur</label><select class="sm" id="sc-trig"></select><select class="sm" id="sc-edge" aria-label="Front"><option value="up">front montant ↑</option><option value="down">front descendant ↓</option></select>
+            <button class="btn" id="sc-freeze" aria-pressed="false">Figer</button><button class="btn" id="sc-clear">Effacer le repère</button>
+            <span class="grow"></span><span class="rd" id="sc-rd"></span>
+          </div>
+          <div class="scopewrap"><canvas id="scope" aria-label="Chronogrammes des broches du projet"></canvas></div>
+        </div>
+      </section>
+    </main>
+    <div class="vsplit" id="vsplit" role="separator" aria-orientation="vertical" aria-label="Redimensionner"></div>
+    <aside class="right" aria-label="Carte et description du projet">
+      <div class="rtabs" role="tablist"><button class="rtab" role="tab" id="rt-board" aria-selected="true">Carte</button><button class="rtab" role="tab" id="rt-sensors" aria-selected="false">Capteurs ADC</button><button class="rtab" role="tab" id="rt-enonce" aria-selected="false">Description</button><span class="grow"></span><label id="gpvis-l"><input type="checkbox" id="gpvis" checked> GPIO visibles</label></div>
+      <div class="rpane" id="rp-board">
+        <div class="boardwrap" id="boardwrap"></div>
+        <div class="bnote"><span>Maintiens <b>PB1</b> / <b>PB2</b> pour appuyer</span><span>Roue <b>SW2</b> : clic, molette ou flèches</span><span>Les LED s'allument quand leur broche est une sortie à 1</span></div>
+        <div class="modules" id="modules"></div>
+      </div>
+      <div class="rpane" id="rp-sensors" hidden><div class="sensors" id="sensors"></div></div>
+      <div class="rpane" id="rp-enonce" hidden><div class="enonce" id="enonce"></div></div>
+    </aside>
+  </div>
+  <footer class="statusbar">
+    <span class="st-chip" id="st-run"><i></i>Non chargé</span>
+    <span id="st-proj"></span>
+    <span id="st-stale" hidden style="color:var(--warn)">Code modifié depuis la compilation : relance Debug</span>
+    <span class="grow"></span>
+    <span id="st-save">Enregistré dans ce navigateur</span>
+    <span class="mono" id="st-pos">1 : 1</span>
+    <span class="mono" id="st-time">t = 0,000 s</span>
+  </footer>
+</div>
+<script src="boot.js"></script>
+</body>
+</html>

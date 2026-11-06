@@ -1,0 +1,34 @@
+SIMULATEUR DSP F28335 — extension Chrome
+=========================================
+
+INSTALLATION (une seule fois, Chrome ou Chromium 116+, Windows / Linux / macOS)
+1. Décompresse le .zip dans un dossier que tu garderas (par exemple Documents/F28335-Simulator).
+   Chrome lit l'extension directement dans ce dossier : ne le supprime pas.
+2. Ouvre Chrome et va à l'adresse : chrome://extensions
+3. Active « Mode développeur » (interrupteur en haut à droite).
+4. Clique sur « Charger l'extension non empaquetée » et choisis le dossier
+   qui contient manifest.json.
+5. Épingle l'icône (pièce de puzzle ▸ punaise).
+
+OUVRIR
+- Clic sur l'icône : ouvre le simulateur dans un onglet (raccourci Alt+Maj+D).
+- Clic droit sur l'icône : « Ouvrir dans un onglet » ou « Ouvrir dans le panneau latéral ».
+
+PROJETS
+- « Libre GPIO » : LED, boutons, roue codeuse (démarre avec un chenillard).
+- « Libre ADC » : VR1 / VR2 sur ADCINA0 / ADCINA1 et capteurs virtuels (démarre avec la lecture de VR1).
+- Tes projets sont enregistrés automatiquement dans l'extension, sur ce PC.
+  Désinstaller l'extension efface tout : fais Préférences ▸ Données ▸ Exporter avant.
+
+METTRE À JOUR
+- Remplace le contenu du dossier par la nouvelle version, puis dans chrome://extensions
+  clique sur la flèche circulaire de l'extension. Tes projets sont conservés.
+
+LIMITES
+- Simulateur d'entraînement : il ne programme pas la vraie carte.
+- Une partie du C seulement (pas de pointeurs, struct, enum, typedef).
+- Routines d'interruption (PIE) et timers ePWM non exécutés ; les déclenchements
+  SOCA / SOCB / ADCSOC de l'ADC le sont.
+- Vérifie toujours ton programme sur la vraie carte.
+
+Documentation complète : https://github.com/eliseeATIKPO/F28335-Simulator
