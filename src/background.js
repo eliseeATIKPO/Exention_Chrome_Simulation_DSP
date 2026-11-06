@@ -20,8 +20,10 @@ async function openTab() {
 }
 function menus() {
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: 'open-tab', title: 'Ouvrir dans un onglet', contexts: ['action'] });
-    chrome.contextMenus.create({ id: 'open-panel', title: 'Ouvrir dans le panneau latéral', contexts: ['action'] });
+    // Le rappel lit lastError : si le menu existe déjà (appels rapprochés), on l'ignore sans erreur.
+    const ok = () => void chrome.runtime.lastError;
+    chrome.contextMenus.create({ id: 'open-tab', title: 'Ouvrir dans un onglet', contexts: ['action'] }, ok);
+    chrome.contextMenus.create({ id: 'open-panel', title: 'Ouvrir dans le panneau latéral', contexts: ['action'] }, ok);
   });
 }
 chrome.runtime.onInstalled.addListener(() => { menus(); applyBehavior(); });
