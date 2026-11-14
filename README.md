@@ -1,6 +1,6 @@
 # Simulateur DSP F28335
 
-Extension Chrome qui simule un DSP **TMS320F28335** pour s'entraîner à programmer ses périphériques en C, **sans carte** : éditeur et débogueur inspirés de Code Composer Studio, **GPIO**, **module ADC** et **capteurs virtuels**.
+Extension Chrome qui simule un DSP **TMS320F28335** pour s'entraîner à programmer ses périphériques en C, **sans carte** : éditeur et débogueur inspirés de Code Composer Studio, **GPIO**, **module ADC**, **modules ePWM** et **capteurs virtuels**.
 
 Tu écris ton programme, tu le lances, et la carte simulée réagit : les LED s'allument, les boutons se pressent à la souris, les capteurs se règlent au curseur et l'ADC convertit.
 
@@ -54,8 +54,24 @@ Il n'est **pas** fait pour remplacer la carte. C'est un outil d'entraînement.
 - Drapeaux `SEQx_BSY`, `INT_SEQx`, `INT_SEQx_CLR`.
 - Résultats **justifiés à gauche** comme sur le vrai composant : il faut écrire `ADCRESULTx >> 4`, ou lire `AdcMirror`.
 - Durée de conversion calculée à partir de `ACQ_PS`, `CPS` et `ADCCLKPS`.
-- Déclenchement logiciel, par la broche ADCSOC ou par SOCA / SOCB (ePWM, fréquence réglable).
+- Déclenchement logiciel, par la broche ADCSOC ou par SOCA / SOCB émis par les modules ePWM.
 - Réglages de réalisme : bruit, offset, arrondi ou troncature.
+
+### Modules ePWM
+- Les 6 modules **ePWM1 à ePWM6**, horloges `SysCtrlRegs.PCLKCR1.bit.EPWMxENCLK`.
+- Compteur (`TBCTL`, `TBCTR`, `TBPRD`, `TBPHS`) : comptage, décomptage, comptage-décomptage, diviseurs `HSPCLKDIV` et `CLKDIV`, registres fantômes.
+- Comparateurs `CMPA` / `CMPB` et actions `AQCTLA` / `AQCTLB` (ZRO, PRD, CAU, CAD, CBU, CBD), forçages `AQSFRC` / `AQCSFRC`.
+- Temps morts (`DBCTL`, `DBRED`, `DBFED`), synchronisation ePWM1 → ePWM6 (`SYNCOSEL`, `PHSEN`, `PHSDIR`), trip-zone forcé par logiciel.
+- `ETSEL` / `ETPS` / `ETFLG` : les impulsions **SOCA / SOCB démarrent vraiment l'ADC**.
+- Sorties sur GPIO0 à GPIO11 via `GPAMUX1` ; LD1 et LD2 (EPWM5B, EPWM6B) brillent selon le rapport cyclique.
+- **Vue ePWM** : compteur, CMPA / CMPB et sorties sur deux périodes, fréquence et rapport cyclique mesurés, registres décodés.
+- Mêmes règles que les en-têtes TI : `TBPRD`, `TBCTR`, `CMPB` s'écrivent sans `.all` ; `CMPA` et `TBPHS` via `.half.CMPA` / `.half.TBPHS`.
+
+### Tes propres projets
+- **＋ Nouveau projet** (ou *Fichier ▸ Nouveau projet CCS*) : un projet à toi, vide, minimal ou copié du projet actif.
+- Renommer, dupliquer, supprimer ; notes enregistrées avec le projet.
+- Modules à brancher : hacheur série + moteur CC (tension moyenne mesurée), commutateur 4 positions, afficheurs, clavier…
+- Analyseur logique : choix des broches affichées.
 
 ### Capteurs virtuels
 Un capteur se branche sur chacune des 16 voies (ADCINA0 à A7, ADCINB0 à B7) :
@@ -87,7 +103,7 @@ Les deux potentiomètres de la carte sont reliés à ADCINA0 et ADCINA1.
 
 L'extension n'est pas sur le Chrome Web Store. Elle s'installe en mode développeur, une seule fois, en environ deux minutes.
 
-1. Télécharge le fichier `.zip` de la dernière version dans **[Releases](https://github.com/eliseeATIKPO/F28335-Simulator/releases)**.
+1. Télécharge le fichier `.zip` de la dernière version dans **[Releases](https://github.com/eliseeATIKPO/Exention_Chrome_Simulation_DSP/releases)**.
 2. Décompresse-le dans un dossier que tu garderas (par exemple `Documents/F28335-Simulator`). Chrome lit l'extension directement dans ce dossier : ne le supprime pas.
 3. Dans Chrome, va à l'adresse `chrome://extensions`.
 4. Active le **Mode développeur** (interrupteur en haut à droite).
@@ -101,10 +117,10 @@ Navigateurs compatibles : Chrome ou Chromium 116 et plus récent, sous Windows, 
 ## Prise en main
 
 1. Clique sur l'icône de l'extension (ou `Alt+Maj+D`).
-2. Ouvre un des projets **Libre** : la carte et les capteurs sont déjà branchés.
+2. Ouvre un des projets **Libre**, ou crée le tien avec **＋ Nouveau projet** : la carte et les capteurs sont déjà branchés.
 3. Écris ton code dans `main.c`.
 4. **Debug** (`F11`) pour démarrer arrêté au début de `main()`, puis **Resume** (`F8`). Ou lance directement avec `Ctrl+Entrée`.
-5. Observe le résultat : LED sur la carte, onglet **Capteurs ADC** à droite, onglet **ADC** et **Analyseur logique** en bas, variables dans **Expressions**.
+5. Observe le résultat : LED sur la carte, onglet **Capteurs ADC** à droite, onglets **ADC**, **ePWM** et **Analyseur logique** en bas, variables dans **Expressions**.
 
 Exemple minimal pour lire le potentiomètre VR1 :
 
@@ -168,8 +184,8 @@ Le simulateur **interprète** ton code C. Ce n'est pas un compilateur pour le vr
 
 **Pas pris en charge :**
 - pointeurs, `struct`, `enum`, `typedef` ;
-- routines d'interruption (PIE) : `EINT` est accepté mais sans effet ;
-- timers ePWM et CPU Timers (les signaux SOCA / SOCB vers l'ADC sont en revanche simulés) ;
+- routines d'interruption (PIE) : `EINT` est accepté mais sans effet (les drapeaux, comme `ETFLG.INT`, sont simulés) ;
+- CPU Timers, chopper (`PCCTL`), entrées de défaut TZ externes, haute résolution (HRPWM) ;
 - autres périphériques (SCI, SPI, I2C, eCAN, eCAP, eQEP…).
 
 Le timing est approximatif. Valide toujours ton programme sur la vraie carte.
@@ -206,7 +222,7 @@ Tes projets sont conservés.
 
 ## Signaler un problème
 
-Ouvre une **[issue](https://github.com/eliseeATIKPO/F28335-Simulator/issues)** en indiquant :
+Ouvre une **[issue](https://github.com/eliseeATIKPO/Exention_Chrome_Simulation_DSP/issues)** en indiquant :
 - ce que tu attendais et ce qui s'est passé ;
 - le code concerné, ou un exemple réduit qui reproduit le problème ;
 - ta version de Chrome et ton système.

@@ -43,9 +43,53 @@ function initProject(s, ex) {
   if (typeof p.expanded !== 'boolean') p.expanded = ex.id === s.active;
   if (!Array.isArray(p.sensors) || p.sensors.length !== 16) p.sensors = defaultSensors(ex);
 }
+function normUser(u) {
+  u.notes = typeof u.notes === 'string' ? u.notes : '';
+  u.created = typeof u.created === 'number' ? u.created : Date.now();
+  u.mods = Array.isArray(u.mods) ? u.mods.filter(m => ['hacheur', 'commut', 'motor', 'seg7', 'keypad', 'hc595', 'portb'].includes(m)) : [];
+  const sc0 = u.scope && typeof u.scope === 'object' ? u.scope : {};
+  const sigs = Array.isArray(sc0.sigs) ? sc0.sigs.filter(x => Array.isArray(x) && Number.isInteger(x[0]) && x[0] >= 0 && x[0] < 88 && typeof x[1] === 'string').slice(0, 12) : [];
+  u.scope = { sigs: sigs.length ? sigs : [[0, 'EPWM1A'], [1, 'EPWM1B'], [2, 'EPWM2A'], [3, 'EPWM2B'], [9, 'LD1/5B'], [11, 'LD2/6B']], tb: typeof sc0.tb === 'number' ? sc0.tb : 100, mode: sc0.mode === 'roll' ? 'roll' : 'trig', trig: Number.isInteger(sc0.trig) ? sc0.trig : 0, edge: sc0.edge === 'down' ? 'down' : 'up' };
+  if (!u.scope.sigs.some(x => x[0] === u.scope.trig)) u.scope.trig = u.scope.sigs[0][0];
+  const h = u.hach && typeof u.hach === 'object' ? u.hach : {};
+  u.hach = { pin: Number.isInteger(h.pin) && h.pin >= 0 && h.pin < 12 ? h.pin : 0, act: h.act === 0 ? 0 : 1, E: typeof h.E === 'number' && h.E > 0 ? h.E : 24 };
+  const c = u.commut && typeof u.commut === 'object' ? u.commut : {};
+  u.commut = { b0: Number.isInteger(c.b0) ? c.b0 : 2, b1: Number.isInteger(c.b1) ? c.b1 : 3, pos: [1, 2, 3, 4].includes(c.pos) ? c.pos : 1 };
+  return u;
+}
+function userExo(u) {
+  const ex = {
+    id: u.id, user: true, u, chap: 'user', tab: u.name, sub: 'Mon projet', proj: u.name, title: 'Projet ' + u.name, ref: 'Projet personnel',
+    uses: ['LD1', 'LD2', 'LD3', 'LD4', 'PB1', 'PB2', 'SW2'], modules: u.mods, scope: u.scope, expr: [], right: 'board', btab: 'epwm',
+    sensors: { 0: { type: 'pot', label: 'VR1', v: 1.5 }, 1: { type: 'pot', label: 'VR2', v: 0.8 } },
+    starter: `//###########################################################################
+// Projet ${u.name}
+//###########################################################################
+#include "DSP28x_Project.h"     // en-têtes du DSP (fournis par le simulateur)
+
+void main(void)
+{
+    InitSysCtrl();
+
+    while (1)
+    {
+    }
+}
+`, enonce: ''
+  };
+  Object.defineProperty(ex, 'comps', { get() {
+    const l = [{ name: 'LD1', pin: 9, role: 'out' }, { name: 'LD2', pin: 11, role: 'out' }, { name: 'LD3', pin: 34, role: 'out' }, { name: 'LD4', pin: 49, role: 'out' }, { name: 'PB1', pin: 17, role: 'in' }, { name: 'PB2', pin: 48, role: 'in' }];
+    for (const [n] of u.scope.sigs) if (n < 12 && n !== 9 && n !== 11) l.push({ name: `EPWM${(n >> 1) + 1}${n & 1 ? 'B' : 'A'}`, pin: n, role: 'pwm' });
+    return l;
+  } });
+  return ex;
+}
+function addUserExo(u) { const ex = userExo(u); EXOS.push(ex); return ex; }
 function loadState() {
   let s = null; try { s = JSON.parse(lsGet(LS_KEY) || 'null'); } catch (e) { s = null; }
   if (!s || typeof s !== 'object') s = {};
+  s.user = Array.isArray(s.user) ? s.user.filter(u => u && typeof u.id === 'string' && /^u\w+$/.test(u.id) && typeof u.name === 'string' && /^[A-Za-z_][\w-]{0,39}$/.test(u.name)) : [];
+  for (const u of s.user) addUserExo(normUser(u));
   s.active = EXOS.some(e => e.id === s.active) ? s.active : 'libre';
   s.projects = s.projects && typeof s.projects === 'object' ? s.projects : {};
   s.tomb = s.tomb && typeof s.tomb === 'object' ? s.tomb : {};
@@ -61,14 +105,15 @@ const PREF_DEF = {
   ac: true, acAuto: true, acMin: 2, acProject: true, acRegs: true,
   autoClose: true, autoIndent: true, tabSize: 4, fontSize: 13, highlight: true,
   theme: 'auto', speed: 1, openIn: 'tab', hints: true, sensorsAll: false, verifyTol: 3,
-  adc: { vref: 3, rounding: 'round', noiseLsb: 0, offsetLsb: 0, convScale: 1, floating: 'noise', clockFromInit: false, needPower: false, socaHz: 1000, socbHz: 1000 }
+  adc: { vref: 3, rounding: 'round', noiseLsb: 0, offsetLsb: 0, convScale: 1, floating: 'noise', clockFromInit: false, needPower: false, socaHz: 1000, socbHz: 1000 },
+  epwm: { clockFromInit: false, needSync: false }
 };
 function readPrefs(txt) {
   let o = null; try { o = JSON.parse(txt || 'null'); } catch (e) { o = null; }
   const p = JSON.parse(JSON.stringify(PREF_DEF));
   if (o && typeof o === 'object') {
-    for (const k of Object.keys(PREF_DEF)) if (k !== 'adc' && typeof o[k] === typeof PREF_DEF[k]) p[k] = o[k];
-    if (o.adc && typeof o.adc === 'object') for (const k of Object.keys(PREF_DEF.adc)) if (typeof o.adc[k] === typeof PREF_DEF.adc[k]) p.adc[k] = o.adc[k];
+    for (const k of Object.keys(PREF_DEF)) if (k !== 'adc' && k !== 'epwm' && typeof o[k] === typeof PREF_DEF[k]) p[k] = o[k];
+    for (const g of ['adc', 'epwm']) if (o[g] && typeof o[g] === 'object') for (const k of Object.keys(PREF_DEF[g])) if (typeof o[g][k] === typeof PREF_DEF[g][k]) p[g][k] = o[g][k];
   }
   p.acMin = Math.max(1, Math.min(4, p.acMin | 0 || 2));
   p.tabSize = [2, 3, 4, 8].includes(p.tabSize) ? p.tabSize : 4;
@@ -107,6 +152,7 @@ const hw = new Sim.HW();
 const inp = { PB1: false, PB2: false, hex: 0, keys: new Set(), g1: 0, sw: [1, 0, 0, 1, 1, 0, 1, 1] };
 const KEYPOS = { 1: [0, 0], 2: [0, 1], 3: [0, 2], 4: [1, 0], 5: [1, 1], 6: [1, 2], 7: [2, 0], 8: [2, 1], 9: [2, 2], 0: [3, 1] };
 function ext(n) {
+  if (cur.user && cur.modules.includes('commut')) { const c = cur.u.commut; if (n === c.b0) return (c.pos - 1) & 1; if (n === c.b1) return ((c.pos - 1) >> 1) & 1; }
   if (n === 17) return inp.PB1 ? 0 : 'PU';
   if (n === 48) return inp.PB2 ? 0 : 'PU';
   if (n >= 12 && n <= 15) return ((inp.hex >> (n - 12)) & 1) ? 1 : 'PD';
@@ -315,7 +361,8 @@ const MACROS = [
   { label: 'GpioDataRegs', insert: 'GpioDataRegs.', desc: 'registres de données', kind: 'R', reopen: true },
   { label: 'AdcRegs', insert: 'AdcRegs.', desc: 'registres du convertisseur A/N', kind: 'R', reopen: true },
   { label: 'AdcMirror', insert: 'AdcMirror.', desc: 'résultats justifiés à droite (0–4095)', kind: 'R', reopen: true },
-  { label: 'SysCtrlRegs', insert: 'SysCtrlRegs.', desc: 'contrôle système (PCLKCR0 : horloges)', kind: 'R', reopen: true },
+  { label: 'SysCtrlRegs', insert: 'SysCtrlRegs.', desc: 'contrôle système (PCLKCR0, PCLKCR1 : horloges)', kind: 'R', reopen: true },
+  ...[1, 2, 3, 4, 5, 6].map(i => ({ label: `EPwm${i}Regs`, insert: `EPwm${i}Regs.`, desc: `module ePWM${i} (sorties GPIO${2 * i - 2} / GPIO${2 * i - 1})`, kind: 'R', reopen: true })),
   { label: 'ADCENCLK = 1 (horloge ADC)', insert: 'EALLOW;\nSysCtrlRegs.PCLKCR0.bit.ADCENCLK = 1;   // horloge de l\'ADC\nEDIS;', desc: 'active l\'horloge du module ADC', kind: 'M', key: 'adcenclk' },
   { label: 'initADC()', insert: 'initADC();', desc: 'mise sous tension + calibration (étape 3)', kind: 'M' },
   { label: 'InitAdc()', insert: 'InitAdc();', desc: 'nom TI de la même fonction', kind: 'M' },
@@ -346,13 +393,14 @@ function acContext(force) {
   const before = src.value.slice(0, pos); const lineTxt = before.slice(before.lastIndexOf('\n') + 1);
   if (/\/\//.test(lineTxt) && !/"[^"]*$/.test(lineTxt)) return null;
   let m;
-  if (P.acRegs && (m = /\b(AdcRegs|AdcMirror|SysCtrlRegs)((?:\s*\.\s*\w+)*)\s*\.\s*(\w*)$/.exec(before))) {
+  if (P.acRegs && (m = /\b(AdcRegs|AdcMirror|SysCtrlRegs|EPwm[1-6]Regs)((?:\s*\.\s*\w+)*)\s*\.\s*(\w*)$/.exec(before))) {
     const path = m[2].split('.').map(x => x.trim()).filter(Boolean), pre = m[3];
-    const items = AdcSim.completions(m[1], path);
+    const ia = AdcSim.completions(m[1], path), ip = EpwmSim.completions(m[1], path);
+    const items = ia && ip ? ia.concat(ip) : (ia || ip);
     if (items) return { start: pos - pre.length, pre, items };
     if (m[1] !== 'SysCtrlRegs') return null;
   }
-  if (!P.acRegs && /\b(Gpio(Ctrl|Data)Regs|AdcRegs|AdcMirror|SysCtrlRegs)[\w.\s]*\.\s*\w*$/.test(before)) return null;
+  if (!P.acRegs && /\b(Gpio(Ctrl|Data)Regs|AdcRegs|AdcMirror|SysCtrlRegs|EPwm[1-6]Regs)[\w.\s]*\.\s*\w*$/.test(before)) return null;
   if ((m = /Gpio(Ctrl|Data)Regs\s*\.\s*GP([ABC])(MUX1|MUX2|DIR|PUD|QSEL1|QSEL2|CTRL|DAT|SET|CLEAR|TOGGLE)\s*\.\s*bit\s*\.\s*(\w*)$/.exec(before))) {
     const [, , P, kind, pre] = m; let items;
     if (kind === 'CTRL') items = [0, 1, 2, 3].map(i => ({ label: `QUALPRD${i}`, insert: `QUALPRD${i} = `, desc: 'période de filtrage', kind: 'b' }));
@@ -487,7 +535,7 @@ function renderTree() {
   el.innerHTML = EXOS.map(ex => {
     const p = S.projects[ex.id]; const isAct = ex.id === cur.id; const open = p.expanded;
     const files = p.files.slice().sort((a, b) => a.name.localeCompare(b.name));
-    return `<li><div class="trow proj${isAct ? ' active' : ''}" data-p="${ex.id}" role="treeitem" aria-expanded="${open}" tabindex="0" title="${esc(ex.title)}"><span class="tw">${open ? '▾' : '▸'}</span>${IC.proj}<span class="nm">${esc(ex.proj)}</span>${isAct ? '<span class="act">[Active]</span>' : ''}<span class="acts"><button data-newin="${ex.id}" title="Nouveau fichier dans ${esc(ex.proj)}" aria-label="Nouveau fichier">+</button></span></div>
+    return `<li><div class="trow proj${isAct ? ' active' : ''}" data-p="${ex.id}" role="treeitem" aria-expanded="${open}" tabindex="0" title="${esc(ex.title)}"><span class="tw">${open ? '▾' : '▸'}</span>${IC.proj}<span class="nm">${esc(ex.proj)}</span>${isAct ? '<span class="act">[Active]</span>' : ''}<span class="acts"><button data-newin="${ex.id}" title="Nouveau fichier dans ${esc(ex.proj)}" aria-label="Nouveau fichier">+</button>${ex.user ? `<button data-pren="${ex.id}" title="Renommer le projet" aria-label="Renommer le projet ${esc(ex.proj)}">✎</button><button data-pdel="${ex.id}" title="Supprimer le projet" aria-label="Supprimer le projet ${esc(ex.proj)}">×</button>` : ''}</span></div>
     ${open ? `<ul role="group">
       <li><div class="trow deco" title="En-têtes du DSP, fournis par le simulateur">${IC.deco}<span class="nm">Includes</span></div></li>
       ${files.map(f => `<li><div class="trow file${isAct && p.cur === f.id ? ' sel' : ''}" data-f="${f.id}" data-in="${ex.id}" role="treeitem" tabindex="0">${/\.h$/i.test(f.name) ? IC.hfile : IC.cfile}<span class="nm">${esc(f.name)}</span><span class="acts"><button data-ren="${f.id}" data-in="${ex.id}" title="Renommer" aria-label="Renommer ${esc(f.name)}">✎</button><button data-del="${f.id}" data-in="${ex.id}" title="Supprimer" aria-label="Supprimer ${esc(f.name)}">×</button></span></div></li>`).join('')}
@@ -496,7 +544,7 @@ function renderTree() {
   }).join('');
   el.querySelectorAll('.trow.proj').forEach(r => {
     const go = e => {
-      if (e.target.closest('[data-newin]')) return;
+      if (e.target.closest('button')) return;
       const id = r.dataset.p; const p = S.projects[id];
       if (id === cur.id) { p.expanded = !p.expanded; renderTree(); saveLocal(); }
       else { p.expanded = true; selectExercise(id); }
@@ -510,6 +558,8 @@ function renderTree() {
     r.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(e); } });
   });
   el.querySelectorAll('[data-newin]').forEach(b => b.addEventListener('click', () => { if (b.dataset.newin !== cur.id) selectExercise(b.dataset.newin); newFileDlg(); }));
+  el.querySelectorAll('[data-pren]').forEach(b => b.addEventListener('click', () => renameProjectDlg(b.dataset.pren)));
+  el.querySelectorAll('[data-pdel]').forEach(b => b.addEventListener('click', () => deleteProjectDlg(b.dataset.pdel)));
   el.querySelectorAll('[data-ren]').forEach(b => b.addEventListener('click', () => { if (b.dataset.in !== cur.id) selectExercise(b.dataset.in); renameDlg(b.dataset.ren); }));
   el.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => { if (b.dataset.in !== cur.id) selectExercise(b.dataset.in); deleteDlg(b.dataset.del); }));
 }
@@ -521,7 +571,7 @@ function dialog({ title, body, okLabel, cancelLabel = 'Annuler', onOk, wide, inp
   document.body.append(back);
   const prevFocus = document.activeElement;
   const close = () => { back.remove(); if (prevFocus && prevFocus.focus) prevFocus.focus(); };
-  const ok = () => { const v = input ? $('dlg-in').value.trim() : null; const err = onOk ? onOk(v) : null; if (err) { $('dlg-err').textContent = err; return; } close(); };
+  const ok = () => { const v = input ? $('dlg-in').value.trim() : null; const err = onOk ? onOk(v) : null; if (err) { const de = $('dlg-err') || back.querySelector('.derr'); if (de) de.textContent = err; return; } close(); };
   if ($('dlg-c')) $('dlg-c').addEventListener('click', close);
   if ($('dlg-ok')) $('dlg-ok').addEventListener('click', ok);
   back.addEventListener('mousedown', e => { if (e.target === back) close(); });
@@ -652,9 +702,10 @@ let progId = 0;
 function load(p, halt) {
   if (M) { M.host = Object.assign({}, host, { state() {} }); M.terminate(); }
   p._id = ++progId;
+  clock.base = 0; clock.at = perf();   // le temps simulé repart de 0 avant le reset des périphériques
   hw.reset(); warned.clear(); runErr = null; execMark = null;
-  clock.base = 0; clock.at = perf();
   prog = p; progEx = cur.id; progStale = false;
+  if (hw.epwm) hw.epwm.live = !!cur.user;
   M = new Sim.Machine(p, hw, host);
   hw.clearLogs(0);
   resetModules(); scopeReset();
@@ -751,7 +802,7 @@ let bottomTab = S.ui.btab || 'console';
 function showBottom(v) {
   bottomTab = v; S.ui.btab = v; saveLocal();
   document.querySelectorAll('.btab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.v === v)));
-  ['console', 'problems', 'vars', 'expr', 'regs', 'scope', 'adc'].forEach(k => { $('bp-' + k).hidden = k !== v; });
+  ['console', 'problems', 'vars', 'expr', 'regs', 'scope', 'adc', 'epwm'].forEach(k => { $('bp-' + k).hidden = k !== v; });
   $('btools').innerHTML = '';
   if (v === 'console') { $('btools').innerHTML = '<button class="btn" id="clrcons">Effacer</button>'; $('clrcons').addEventListener('click', () => { cons().innerHTML = ''; }); }
   if (v === 'vars' || v === 'expr') { $('btools').innerHTML = `<label class="hint" for="fmtsel">Format</label><select class="sm" id="fmtsel"><option value="dec">Décimal</option><option value="hex">Hexadécimal</option><option value="bin">Binaire</option></select>`; $('fmtsel').value = fmt; $('fmtsel').addEventListener('change', e => { fmt = e.target.value; S.ui.fmt = fmt; saveLocal(); renderVars(true); renderExpr(true); }); }
@@ -760,6 +811,7 @@ function showBottom(v) {
   if (v === 'regs') renderRegs(true);
   if (v === 'scope') drawScope();
   if (v === 'adc') { adcSig = ''; renderAdc(true); }
+  if (v === 'epwm') { pwmSig = ''; renderEpwm(true); }
 }
 document.querySelectorAll('.btab').forEach(b => b.addEventListener('click', () => showBottom(b.dataset.v)));
 let fmt = S.ui.fmt || 'dec';
@@ -869,10 +921,12 @@ function renderRegs(force) {
   for (const c of cur.comps) {
     const n = c.pin, P = Sim.portOf(n); const isOut = c.role === 'out';
     const mux = hw.mux[n], dir = hw.dir[n], pud = hw.pud[n]; const lv = hw.level(n);
-    const pudSt = c.pu ? (pud === 0 ? 'good' : 'bad') : (pud === 1 ? 'good' : '');
-    h += `<tr><td>${esc(c.name)}</td><td class="mono">GPIO${n} · port ${P}</td><td>${cell(mux === 0 ? '0 · GPIO' : mux + ' · périph.', mux === 0 ? 'good' : 'bad')}</td><td>${cell(dir ? '1 · sortie' : '0 · entrée', isOut ? (dir ? 'good' : 'bad') : (dir ? 'bad' : 'good'))}</td><td>${cell(pud ? '1 · désactivée' : '0 · activée', pudSt)}</td><td class="mono">${lv === 2 ? cell('en l\'air', 'bad') : lv}</td></tr>`;
+    const pudSt = cur.user ? '' : c.pu ? (pud === 0 ? 'good' : 'bad') : (pud === 1 ? 'good' : '');
+    const isPwm = c.role === 'pwm', nt = cur.user;
+    const muxTxt = mux === 0 ? '0 · GPIO' : mux === 1 && n < 12 ? '1 · ' + EpwmSim.PIN_NAME(n) : mux + ' · périph.';
+    h += `<tr><td>${esc(c.name)}</td><td class="mono">GPIO${n} · port ${P}</td><td>${cell(muxTxt, isPwm ? (mux === 1 ? 'good' : 'bad') : nt ? '' : mux === 0 ? 'good' : 'bad')}</td><td>${cell(dir ? '1 · sortie' : '0 · entrée', isPwm || nt ? '' : isOut ? (dir ? 'good' : 'bad') : (dir ? 'bad' : 'good'))}</td><td>${cell(pud ? '1 · désactivée' : '0 · activée', pudSt)}</td><td class="mono">${lv === 2 ? cell('en l\'air', 'bad') : lv}</td></tr>`;
   }
-  h += `</tbody></table><p class="pad hint" style="padding-bottom:2px">Vert : réglage attendu pour le projet. Rouge : réglage qui empêche le montage de fonctionner. EALLOW : <b>${hw.eallow ? 'déverrouillé' : 'verrouillé'}</b></p>`;
+  h += `</tbody></table><p class="pad hint" style="padding-bottom:2px">${cur.user ? 'Broches de la carte et sorties ePWM observées (vert : la sortie ePWM arrive bien sur la broche).' : 'Vert : réglage attendu pour le projet. Rouge : réglage qui empêche le montage de fonctionner.'} EALLOW : <b>${hw.eallow ? 'déverrouillé' : 'verrouillé'}</b></p>`;
   const used = new Set(cur.comps.map(c => c.pin));
   const ports = new Set(cur.comps.map(c => Sim.portOf(c.pin)));
   h += `<table class="grid"><thead><tr><th>Registre</th><th>Valeur</th><th>Bits (repère en couleur : broches du projet)</th></tr></thead><tbody>`;
@@ -920,6 +974,7 @@ function scopeConfig() {
   $('sc-mode').value = sc.mode;
   $('sc-trig').innerHTML = c.sigs.map(([n, l]) => `<option value="${n}">${esc(l)}${l.startsWith('GPIO') ? '' : ' (GPIO' + n + ')'}</option>`).join('');
   $('sc-trig').value = String(sc.trig); $('sc-edge').value = sc.edge;
+  $('sc-sigs').hidden = !cur.user;
   syncScopeBar();
 }
 function syncScopeBar() {
@@ -929,10 +984,11 @@ function syncScopeBar() {
   $('sc-freeze').setAttribute('aria-pressed', String(sc.frozen !== null));
 }
 function scopeReset() { sc.trigT = null; sc.frozen = null; sc.cursorA = null; syncScopeBar(); }
-$('sc-tb').addEventListener('change', e => { sc.tb = +e.target.value; sc.trigT = null; });
-$('sc-mode').addEventListener('change', e => { sc.mode = e.target.value; sc.trigT = null; syncScopeBar(); });
-$('sc-trig').addEventListener('change', e => { sc.trig = +e.target.value; sc.trigT = null; });
-$('sc-edge').addEventListener('change', e => { sc.edge = e.target.value; sc.trigT = null; });
+$('sc-tb').addEventListener('change', e => { sc.tb = +e.target.value; sc.trigT = null; rememberScope(); });
+$('sc-mode').addEventListener('change', e => { sc.mode = e.target.value; sc.trigT = null; syncScopeBar(); rememberScope(); });
+$('sc-trig').addEventListener('change', e => { sc.trig = +e.target.value; sc.trigT = null; rememberScope(); });
+$('sc-edge').addEventListener('change', e => { sc.edge = e.target.value; sc.trigT = null; rememberScope(); });
+$('sc-sigs').addEventListener('click', sigsDlg);
 $('sc-freeze').addEventListener('click', () => { sc.frozen = sc.frozen === null ? now() : null; syncScopeBar(); });
 $('sc-clear').addEventListener('click', () => { sc.cursorA = null; });
 function bsearch(arr, t) { let lo = 0, hi = arr.length - 1, r = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (arr[m] <= t) { r = m; lo = m + 1; } else hi = m - 1; } return r; }
@@ -1124,10 +1180,12 @@ function bindBoard() {
   $('hexdn').addEventListener('click', () => setHex(inp.hex - 1));
 }
 const ledOn = n => hw.mux[n] === 0 && hw.dir[n] === 1 && hw.lat[n] === 1;
+// LD1 (GPIO9 = EPWM5B) et LD2 (GPIO11 = EPWM6B) peuvent être pilotées par un ePWM : éclat = rapport cyclique
+const ledLevel = n => (hw.mux[n] === 1 && n < 12 && hw.epwm) ? Math.round(pinDuty(n, 20000) * 20) / 20 : (ledOn(n) ? 1 : 0);
 function updateBoard() {
   for (const [id, n] of [['LD1', 9], ['LD2', 11], ['LD3', 34], ['LD4', 49]]) {
-    const g = $('c-' + id); if (!g) continue; const on = ledOn(n);
-    if (g._on !== on) { g._on = on; g.querySelector('.lamp').setAttribute('fill', on ? '#FF3B2A' : '#6E1C15'); g.querySelector('.glow').setAttribute('opacity', on ? '1' : '0'); g.classList.toggle('on', on); }
+    const g = $('c-' + id); if (!g) continue; const lv = ledLevel(n); const on = lv > 0.02;
+    if (g._on !== lv) { g._on = lv; g.querySelector('.lamp').setAttribute('fill', on ? '#FF3B2A' : '#6E1C15'); g.querySelector('.lamp').setAttribute('fill-opacity', on ? String(0.45 + 0.55 * lv) : '1'); g.querySelector('.glow').setAttribute('opacity', String(lv)); g.classList.toggle('on', on); }
   }
   for (const id of ['PB1', 'PB2']) { const g = $('c-' + id); const d = inp[id]; if (g._d !== d) { g._d = d; g.querySelector('.cap').setAttribute('r', d ? '12' : '14.5'); g.querySelector('.cap').setAttribute('fill', d ? '#1B1E20' : '#2A2E31'); } }
   const hv = inp.hex;
@@ -1137,7 +1195,7 @@ function applyHighlights() {
   const svg = $('boardsvg'); if (!svg) return;
   for (const id of ['LD1', 'LD2', 'LD3', 'LD4', 'PB1', 'PB2', 'SW2']) {
     const g = $('c-' + id); const used = cur.uses.includes(id);
-    g.classList.toggle('hl', used && cur.id !== 'libre'); g.classList.toggle('dim', !used);
+    g.classList.toggle('hl', used && cur.id !== 'libre' && !cur.user); g.classList.toggle('dim', !used);
   }
 }
 
@@ -1173,8 +1231,10 @@ hw.listeners.push((n, v, old, t) => {
 });
 function renderModules() {
   const el = $('modules'); modRefs = {};
-  if (!cur.modules.length) { el.innerHTML = cur.id === 'libre' ? '' : `<p class="hint" style="padding:0 2px">Ce projet n'utilise que des éléments de la carte (en surbrillance).</p>`; return; }
+  if (!cur.modules.length) { el.innerHTML = cur.user ? `<p class="hint" style="padding:0 2px">Aucun module branché. Ajoute un hacheur, un commutateur, un afficheur… dans l'onglet <b>Projet</b>.</p>` : cur.id === 'libre' ? '' : `<p class="hint" style="padding:0 2px">Ce projet n'utilise que des éléments de la carte (en surbrillance).</p>`; return; }
   let h = `<p class="hint" style="padding:0 2px">Modules branchés pour ce projet</p>`;
+  if (cur.user && cur.modules.includes('hacheur')) h += hacheurHTML();
+  if (cur.user && cur.modules.includes('commut')) h += commutHTML();
   if (cur.modules.includes('seg7')) {
     const cath = seg7Mode() === 'cathode';
     h += `<section class="mod"><header>Afficheur 7 segments<span class="grow"></span><span class="chip">GPIO0–GPIO6</span></header>
@@ -1215,6 +1275,7 @@ function renderModules() {
   }
   if (cur.modules.includes('motor')) h += motorHTML();
   el.innerHTML = h;
+  if (cur.user && cur.modules.includes('commut')) bindCommut();
   // liaisons
   el.querySelectorAll('.key').forEach(g => {
     const k = +g.dataset.k; let locked = false;
@@ -1248,6 +1309,8 @@ function renderModules() {
 }
 function updateModules() {
   if (cur.modules.includes('motor')) updateMotor();
+  if (cur.user && cur.modules.includes('hacheur')) updateHacheur();
+  if (cur.user && cur.modules.includes('commut')) updateCommut();
   if (cur.modules.includes('seg7')) {
     for (let i = 0; i < 7; i++) {
       const lit = hw.mux[i] === 0 && hw.dir[i] === 1 && hw.lat[i] === (seg7Mode() === 'cathode' ? 1 : 0);
@@ -1284,10 +1347,15 @@ function updateModules() {
 /* ====================== CHANGEMENT DE PROJET ====================== */
 function renderExTabs() {
   let grp = null;
-  $('extabs').innerHTML = EXOS.map(ex => { const gk = ex.chap === 0 || ex.id === 'libre' ? 0 : (ex.chap || 2); const lab = gk !== grp ? `<span class="exgrp" aria-hidden="true">${gk === 0 ? 'Libre' : gk === 3 ? 'ADC' : 'GPIO'}</span>` : ''; grp = gk; return lab + `<button class="extab" role="tab" id="xt-${ex.id}" aria-selected="${ex.id === cur.id}" data-x="${ex.id}" title="${esc(ex.title)}"><b>${esc(ex.tab)}</b><small>${esc(ex.sub)}</small></button>`; }).join('');
-  $('extabs').querySelectorAll('.extab').forEach(b => b.addEventListener('click', () => selectExercise(b.dataset.x)));
+  $('extabs').innerHTML = EXOS.map(ex => { const gk = ex.user ? 'user' : ex.chap === 0 || ex.id === 'libre' ? 0 : (ex.chap || 2); const lab = gk !== grp ? `<span class="exgrp" aria-hidden="true">${gk === 'user' ? 'Mes projets' : gk === 0 ? 'Libre' : gk === 3 ? 'ADC' : 'GPIO'}</span>` : ''; grp = gk; return lab + `<button class="extab${ex.user ? ' mine' : ''}" role="tab" id="xt-${ex.id}" aria-selected="${ex.id === cur.id}" data-x="${ex.id}" title="${esc(ex.title)}"><b>${esc(ex.tab)}</b><small>${esc(ex.sub)}</small></button>`; }).join('')
+    + (S.user.length ? '' : '<span class="exgrp" aria-hidden="true">Mes projets</span>') + '<button class="extab newproj" id="xt-new" title="Créer un projet à toi (comme File ▸ New ▸ CCS Project)"><b>＋ Nouveau projet</b><small>ePWM, ADC, GPIO</small></button>';
+  $('extabs').querySelectorAll('.extab[data-x]').forEach(b => b.addEventListener('click', () => selectExercise(b.dataset.x)));
+  $('xt-new').addEventListener('click', () => newProjectDlg(false));
 }
 function setEnonce() {
+  if (!$('rt-enonce').dataset.lab) $('rt-enonce').dataset.lab = $('rt-enonce').textContent;
+  $('rt-enonce').textContent = cur.user ? 'Projet' : $('rt-enonce').dataset.lab;
+  if (cur.user) { $('enonce').innerHTML = userPanel(); hw.watch = new Set(cur.comps.map(c => c.pin)); bindUserPanel(); return; }
   $('enonce').innerHTML = cur.enonce;
   $('enonce').querySelectorAll('details').forEach(d => { const b = d.querySelector('[data-copysol]'), pre = d.querySelector('pre.sol'); if (b && pre && !pre.textContent && typeof SOLS !== 'undefined') pre.textContent = SOLS[b.dataset.copysol] || ''; });
   $('enonce').querySelectorAll('[data-verify]').forEach(b => b.addEventListener('click', verifyExercise));
@@ -1308,6 +1376,7 @@ function selectExercise(id) {
   renderExTabs(); renderTree(); renderFileTabs(); loadEditorText();
   applyHighlights(); renderModules(); resetModules(); scopeConfig();
   setEnonce();
+  if (hw.epwm && !active()) hw.epwm.live = !!cur.user;
   hw.touchAll();
   showRight(cur.right || 'board'); renderSensors(); adcSig = '';
   renderProblems(); exprSig = ''; varsSig = ''; regsSig = ''; renderExpr(true); renderVars(true); renderRegs(true);
@@ -1318,6 +1387,7 @@ function selectExercise(id) {
 /* ====================== MENUS ====================== */
 const MENUS = {
   file: () => [
+    { l: 'Nouveau projet CCS…', a: () => newProjectDlg(false) },
     { l: 'Nouveau fichier…', k: '', a: newFileDlg },
     { l: 'Renommer le fichier…', a: () => curFile() && renameDlg(curFile().id), d: !curFile() },
     { l: 'Supprimer le fichier…', a: () => curFile() && deleteDlg(curFile().id), d: !curFile() },
@@ -1346,6 +1416,11 @@ const MENUS = {
     { l: 'Build Project', k: 'Ctrl+B', a: doBuild },
     { l: 'Compiler et lancer', k: 'Ctrl+Entrée', a: runNow },
     { sep: 1 },
+    { l: 'Nouveau projet…', a: () => newProjectDlg(false) },
+    { l: 'Dupliquer le projet actif…', a: () => newProjectDlg(true) },
+    { l: 'Renommer le projet…', a: () => renameProjectDlg(cur.id), d: !cur.user },
+    { l: 'Supprimer le projet…', a: () => deleteProjectDlg(cur.id), d: !cur.user },
+    { sep: 1 },
     ...EXOS.map(ex => ({ l: (ex.id === cur.id ? '● ' : '') + ex.proj, a: () => selectExercise(ex.id) }))
   ],
   run: () => {
@@ -1371,15 +1446,17 @@ const MENUS = {
     { sep: 1 },
     { l: 'Console', a: () => showBottom('console') }, { l: 'Problèmes', a: () => showBottom('problems') }, { l: 'Variables', a: () => showBottom('vars') }, { l: 'Expressions', a: () => showBottom('expr') }, { l: 'Registres', a: () => showBottom('regs') }, { l: 'Analyseur logique', a: () => showBottom('scope') },
     { sep: 1 },
-    { l: 'Description du projet', a: () => showRight('enonce') }, { l: 'Carte', a: () => showRight('board') }, { l: 'Capteurs ADC', a: () => showRight('sensors') },
+    { l: cur.user ? 'Notes et branchements du projet' : 'Description du projet', a: () => showRight('enonce') }, { l: 'Carte', a: () => showRight('board') }, { l: 'Capteurs ADC', a: () => showRight('sensors') },
     { sep: 1 },
     { l: 'Vue ADC (registres, séquence, tracé)', a: () => showBottom('adc') },
+    { l: 'Vue ePWM (compteur, comparateurs, sorties)', a: () => showBottom('epwm') },
     { l: 'Préférences…', k: 'Ctrl+,', a: prefsDlg },
     ...(BRIDGE.mode === 'panel' ? [{ l: 'Ouvrir dans un grand onglet', a: () => BRIDGE.openTab() }] : [])
   ],
   help: () => [
     { l: 'Raccourcis clavier', a: helpKeys },
     { l: 'Aide-mémoire ADC', a: helpAdc },
+    { l: 'Aide-mémoire ePWM', a: helpEpwm },
     { l: 'Ce que le simulateur sait faire', a: helpLimits },
     { l: 'À propos de l\'extension', a: helpExt }
   ]
@@ -1398,7 +1475,7 @@ function showMenu(btn) {
     const bs = [...el.querySelectorAll('button:not(:disabled)')]; const i = bs.indexOf(document.activeElement);
     if (e.key === 'ArrowDown') { e.preventDefault(); bs[(i + 1) % bs.length].focus(); }
     if (e.key === 'ArrowUp') { e.preventDefault(); bs[(i - 1 + bs.length) % bs.length].focus(); }
-    if (e.key === 'Escape') { e.preventDefault(); const b = openMenu.btn; closeMenu(); b.focus(); }
+    if (e.key === 'Escape') { e.preventDefault(); const b = openMenu && openMenu.btn; closeMenu(); if (b) b.focus(); }
   });
   btn.setAttribute('aria-expanded', 'true'); openMenu = { key, el, btn };
   const first = el.querySelector('button:not(:disabled)'); if (first && document.activeElement === btn) first.focus();
@@ -1418,11 +1495,11 @@ function helpLimits() {
     title: 'Ce que le simulateur sait faire', cancelLabel: 'Fermer', wide: true, body: `<div class="help">
   <p><b>Langage C</b> : variables globales et locales, tableaux (1 et 2 dimensions), fonctions avec paramètres et valeur de retour, if, while, do, for, switch, #define (aussi avec paramètres), #include de tes .h, plusieurs fichiers .c compilés ensemble, printf vers la console.</p>
   <p><b>Types comme sur le C28x</b> : int, char et Uint16 sur 16 bits, long et Uint32 sur 32 bits. Exemple : <code>~0xF000</code> vaut 0x0FFF sur 16 bits, et efface les bits 16 à 31 d'un registre 32 bits si on oublie <code>UL</code>.</p>
-  <p><b>Registres</b> : GpioCtrlRegs (MUX1/2, DIR, PUD, QSEL1/2, CTRL) protégés par EALLOW/EDIS, GpioDataRegs (DAT, SET, CLEAR, TOGGLE), en <code>.bit.GPIOxx</code> ou <code>.all</code>, ports A, B et C. <b>AdcRegs</b> et <b>AdcMirror</b> (tout le module ADC : séquenceurs cascadé / double, start-stop / continu, drapeaux, résultats) et <b>SysCtrlRegs.PCLKCR0</b> (horloges, protégé par EALLOW). Les autres périphériques (PieCtrlRegs, ePWM…) sont acceptés mais pas simulés.</p>
+  <p><b>Registres</b> : GpioCtrlRegs (MUX1/2, DIR, PUD, QSEL1/2, CTRL) protégés par EALLOW/EDIS, GpioDataRegs (DAT, SET, CLEAR, TOGGLE), en <code>.bit.GPIOxx</code> ou <code>.all</code>, ports A, B et C. <b>AdcRegs</b> et <b>AdcMirror</b> (tout le module ADC : séquenceurs cascadé / double, start-stop / continu, drapeaux, résultats) <b>EPwm1Regs à EPwm6Regs</b> (compteurs, comparateurs, actions, forçages, temps morts, synchronisation, trip-zone forcé par logiciel, SOCA / SOCB vers l'ADC, drapeaux ETFLG) et <b>SysCtrlRegs.PCLKCR0 / PCLKCR1</b> (horloges, protégés par EALLOW). Les autres périphériques (PieCtrlRegs, CpuTimer, eCAP…) sont acceptés mais pas simulés.</p>
   <p><b>Capteurs</b> : potentiomètres, capteurs linéaires (V = a·x + b) et générateurs sur les 16 voies ADCIN, déclencheurs ADCSOC / SOCA / SOCB simulés.</p>
   <p><b>Temps</b> : une instruction C dure environ 0,05 µs (≈ 7 cycles à 150 MHz) ; <code>DELAY_US(x)</code> attend x µs. Le temps simulé suit le temps réel, sauf pendant une pause.</p>
   <p><b>Débogage</b> : points d'arrêt, pas à pas, pile d'appels, variables locales et globales, expressions surveillées, registres, analyseur logique.</p>
-  <p><b>Pas pris en charge</b> : pointeurs, struct, enum, typedef, routines d'interruption (les drapeaux sont simulés, pas l'appel de la routine), timers, ePWM. Le simulateur ne remplace pas la carte : vérifie toujours ton programme sur la vraie carte.</p>
+  <p><b>Pas pris en charge</b> : pointeurs, struct, enum, typedef, routines d'interruption (les drapeaux sont simulés, pas l'appel de la routine), CPU timers, chopper (PCCTL), entrées TZ externes, haute résolution (HRPWM). Le simulateur ne remplace pas la carte : vérifie toujours ton programme sur la vraie carte.</p>
   <p><b>Tes fichiers</b> sont enregistrés automatiquement dans l'extension, sur ce PC (Préférences ▸ Données pour exporter).</p></div>`
   });
 }
@@ -1445,7 +1522,7 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && (k === 's' || k === 'S')) { e.preventDefault(); toast('Enregistrement automatique : ton code est déjà sauvegardé'); return; }
   if (k === 'Escape') closeMenu();
 }, true);
-$('tb-new').addEventListener('click', newFileDlg); $('ex-new').addEventListener('click', newFileDlg);
+$('tb-new').addEventListener('click', newFileDlg); $('ex-new').addEventListener('click', newFileDlg); $('ex-newp').addEventListener('click', () => newProjectDlg(false));
 $('tb-build').addEventListener('click', doBuild); $('tb-debug').addEventListener('click', debugCmd);
 $('tb-resume').addEventListener('click', resumeCmd); $('tb-suspend').addEventListener('click', suspendCmd); $('tb-term').addEventListener('click', terminateCmd);
 $('tb-into').addEventListener('click', () => stepCmd('into')); $('tb-over').addEventListener('click', () => stepCmd('over')); $('tb-ret').addEventListener('click', () => stepCmd('return'));
@@ -1476,10 +1553,12 @@ function checkHints() {
     if (hw.latT[n] >= 0 && hw.dir[n] === 0 && t - hw.latT[n] > 400000) warnOnce('ldir' + n, `${c.name} : une valeur a été écrite pour GPIO${n}, mais la broche est restée en entrée (GP${Sim.portOf(n)}DIR = 0) : rien ne sort. Mets GP${Sim.portOf(n)}DIR.bit.GPIO${n} = 1 (entre EALLOW et EDIS).`);
   }
 }
-let lastSlow = 0;
+let lastSlow = 0, lastPwm = 0;
 function frame(ts) {
+  if (hw.epwm) hw.epwm.update(now());
   updateBoard(); updateModules(); updateVR();
   if (bottomTab === 'scope') drawScope();
+  if (bottomTab === 'epwm' && ts - lastPwm > 90) { lastPwm = ts; renderEpwm(); }
   if (ts - lastSlow > 160) {
     lastSlow = ts;
     if (M && M.state === 'running') { renderVars(); renderExpr(); }
@@ -1497,6 +1576,7 @@ function applyPrefs() {
   LH = Math.round(P.fontSize * 1.46);
   root.style.setProperty('--cfs', P.fontSize + 'px'); root.style.setProperty('--clh', LH + 'px'); root.style.setProperty('--ctab', String(P.tabSize));
   if (hw.adc) Object.assign(hw.adc.opts, P.adc);
+  if (hw.epwm) { Object.assign(hw.epwm.opts, P.epwm); hw.epwm.syncRun(now()); }
   Sim.Machine.defaultSpeed = P.speed; if (M) M.setSpeed(P.speed);
   const sp = $('tb-speed');
   if (sp) { if (![...sp.options].some(o => +o.value === P.speed)) sp.insertAdjacentHTML('beforeend', `<option value="${P.speed}">× ${fr(P.speed)}</option>`); sp.value = String(P.speed); }
@@ -1526,7 +1606,7 @@ function prefsDlg() {
     ${ck('ac', 'Autocomplétion activée', 'Raccourci : Ctrl+Maj+Espace pour activer / désactiver')}
     ${ck('acAuto', 'Proposer automatiquement pendant la frappe', 'Décoché : la liste n\'apparaît qu\'avec Ctrl+Espace')}
     ${num('acMin', 'Lettres tapées avant de proposer', 1, 4, 1, '')}
-    ${ck('acRegs', 'Proposer les registres et leurs champs', 'GpioCtrlRegs, GpioDataRegs, AdcRegs, AdcMirror, SysCtrlRegs.PCLKCR0')}
+    ${ck('acRegs', 'Proposer les registres et leurs champs', 'GpioCtrlRegs, GpioDataRegs, AdcRegs, AdcMirror, EPwm1Regs à EPwm6Regs, SysCtrlRegs.PCLKCR0 / PCLKCR1')}
     ${ck('acProject', 'Proposer les variables et fonctions de ton projet')}
     <h4>Saisie</h4>
     ${ck('autoClose', 'Fermer automatiquement ( [ { " \'')}
@@ -1542,6 +1622,8 @@ function prefsDlg() {
     <h4>Rigueur de la carte simulée</h4>
     ${ck('adc.clockFromInit', 'InitSysCtrl() active l\'horloge de l\'ADC', 'Comme la bibliothèque TI. Décoché (comme le demande le cours) : tu dois écrire ADCENCLK = 1 toi-même')}
     ${ck('adc.needPower', 'Exiger la mise sous tension de l\'ADC', 'Sans InitAdc() / initADC() (ou ADCTRL3), les conversions renvoient 0, comme sur la vraie carte')}
+    ${ck('epwm.clockFromInit', 'InitSysCtrl() active les horloges des ePWM', 'Comme la bibliothèque TI. Décoché : tu dois écrire PCLKCR1.bit.EPWMxENCLK = 1 toi-même')}
+    ${ck('epwm.needSync', 'Exiger TBCLKSYNC = 1 pour lancer les compteurs ePWM', 'Sur le F28335, les compteurs ne tournent que si SysCtrlRegs.PCLKCR0.bit.TBCLKSYNC = 1 (la bibliothèque TI le fait). Décoché : non exigé')}
   </section>
   <section data-ps="2" hidden>
     <h4>Conversion</h4>
@@ -1676,9 +1758,9 @@ function renderSensors() {
     <button class="btn" id="sn-defaults" title="Revenir aux capteurs prévus par le projet">Montage de départ</button></div></section>`;
   h += `<section class="mod"><header>Déclencheurs externes<span class="grow"></span><span class="chip">ADCSOC · ePWM</span></header><div class="mbody sn-trig">
     <button class="btn" id="sn-extsoc" title="Impulsion sur la broche ADCSOC (EXT_SOC_SEQ1 doit valoir 1)">Impulsion ADCSOC</button>
-    <label class="hint">SOCA <input type="number" class="sn-in" id="sn-soca" min="1" max="100000" step="1" value="${P.adc.socaHz}"> Hz</label>
+    ${cur.user ? `<p class="keyhint">Dans tes projets, les SOCA / SOCB viennent vraiment des modules ePWM (ETSEL, ETPS) : leur fréquence est celle de ton compteur. Regarde l'onglet ePWM en bas.</p>` : `<label class="hint">SOCA <input type="number" class="sn-in" id="sn-soca" min="1" max="100000" step="1" value="${P.adc.socaHz}"> Hz</label>
     <label class="hint">SOCB <input type="number" class="sn-in" id="sn-socb" min="1" max="100000" step="1" value="${P.adc.socbHz}"> Hz</label>
-    <p class="keyhint">Les timers ePWM ne sont pas simulés : quand EPWM_SOCA_SEQ1 (ou SOCB) vaut 1, le simulateur envoie le signal à la fréquence choisie ici.</p></div></section>`;
+    <p class="keyhint">Dans les projets fournis, quand EPWM_SOCA_SEQ1 (ou SOCB) vaut 1, le simulateur envoie le signal à la fréquence choisie ici. Dans tes projets, il vient des vrais modules ePWM.</p>`}</div></section>`;
   el.innerHTML = h;
   updateSensorsLive(true);
 }
@@ -1962,6 +2044,7 @@ function helpExt() {
   <p><b>Ouvrir</b> : clic sur l'icône de l'extension (ou Alt+Maj+D). Clic droit sur l'icône : ouvrir dans un onglet ou dans le panneau latéral. Le choix par défaut se règle dans Préférences ▸ Interface.</p>
   <p><b>Tes projets</b> sont enregistrés automatiquement dans l'extension, sur ce PC (Préférences ▸ Données pour les exporter ou les importer). Désinstaller l'extension efface tout : exporte avant.</p>
   <p><b>Autocomplétion</b> : Ctrl+Espace ouvre la liste ; Ctrl+Maj+Espace l'active ou la désactive ; le bouton en bas à droite aussi. Réglages fins dans Préférences ▸ Éditeur.</p>
+  <p><b>Mes projets</b> : « ＋ Nouveau projet » dans la barre des projets, « + projet » dans le Project Explorer, ou Fichier ▸ Nouveau projet CCS. Onglet « Projet » à droite : notes et modules à brancher (hacheur, commutateur…). Projet ▸ Renommer / Dupliquer / Supprimer.</p>
   <p><b>Capteurs</b> : onglet « Capteurs ADC » à droite, un capteur par voie.</p>
   <p>Ce simulateur sert à s'entraîner : il ne programme pas la carte et n'implémente qu'une partie du C et du F28335. Vérifie toujours sur la vraie carte.</p></div>` });
 }
@@ -2004,6 +2087,341 @@ if (S.ui.bottomH) rootStyle.setProperty('--bottomH', S.ui.bottomH + 'px');
 dragger($('vsplit'), e => { const w = Math.max(320, Math.min(window.innerWidth - 560, window.innerWidth - e.clientX)); rootStyle.setProperty('--rightW', w + 'px'); S.ui.rightW = w; });
 dragger($('hsplit'), e => { const r = document.querySelector('.center').getBoundingClientRect(); const h = Math.max(120, Math.min(r.height - 140, r.bottom - e.clientY)); rootStyle.setProperty('--bottomH', h + 'px'); S.ui.bottomH = h; });
 
+/* ====================== MES PROJETS (créés par l'utilisateur) ====================== */
+const USER_MODS = [
+  ['hacheur', 'Hacheur série + moteur à courant continu', 'interrupteur H commandé par une broche ePWM'],
+  ['commut', 'Commutateur 4 positions', 'deux contacts sur deux broches GPIO'],
+  ['motor', 'Moteur tout-ou-rien sur GPIO0', 'tourne quand GPIO0 est une sortie à 1'],
+  ['seg7', 'Afficheur 7 segments', 'GPIO0 à GPIO6'],
+  ['keypad', 'Clavier 10 touches', 'GPIO0 à GPIO6'],
+  ['hc595', '74HC595 + deux afficheurs', 'GPIO0 à GPIO3'],
+  ['portb', 'Interrupteurs du port B + générateur', 'GPIO32–39, GPIO0, GPIO1']
+];
+const PIN_CHOICES = () => {
+  const l = [];
+  for (let n = 0; n < 12; n++) l.push([n, `GPIO${n} · ${EpwmSim.PIN_NAME(n)}${n === 9 ? ' · LD1' : n === 11 ? ' · LD2' : ''}`]);
+  for (const [n, t] of [[12, 'GPIO12 · roue bit 0'], [13, 'GPIO13 · roue bit 1'], [14, 'GPIO14 · roue bit 2'], [15, 'GPIO15 · roue bit 3'], [17, 'GPIO17 · PB1'], [34, 'GPIO34 · LD3'], [48, 'GPIO48 · PB2'], [49, 'GPIO49 · LD4']]) l.push([n, t]);
+  return l;
+};
+const sigLabel = n => n === 9 ? 'LD1/5B' : n === 11 ? 'LD2/6B' : n < 12 ? EpwmSim.PIN_NAME(n) : ({ 12: 'roue b0', 13: 'roue b1', 14: 'roue b2', 15: 'roue b3', 17: 'PB1', 34: 'LD3', 48: 'PB2', 49: 'LD4' })[n] || 'GPIO' + n;
+function checkProjName(n, exceptId) {
+  if (!n) return 'Donne un nom au projet.';
+  if (!/^[A-Za-z_][\w-]{0,39}$/.test(n)) return 'Nom valide (comme dans Code Composer) : une lettre ou _ au début, puis lettres, chiffres, _ ou -, sans espace ni accent (ex. TP4_PWM, Malaxeur).';
+  if (EXOS.some(e => e.id !== exceptId && e.proj.toLowerCase() === n.toLowerCase())) return 'Un projet porte déjà ce nom.';
+  return null;
+}
+function newProjectDlg(copy) {
+  const def = (() => { for (let i = 1; ; i++) { const n = 'Projet_' + i; if (!EXOS.some(e => e.proj.toLowerCase() === n.toLowerCase())) return n; } })();
+  dialog({
+    title: 'Nouveau projet CCS', okLabel: 'Créer le projet', input: { label: 'Nom du projet', value: copy ? cur.proj + '_copie' : def }, wide: true,
+    body: `<p class="hint">Comme <i>File ▸ New ▸ CCS Project</i> : un dossier de projet à toi, avec la carte complète, les 6 modules ePWM, l'ADC et ses capteurs. Tu y écris ton code, tu lances, tu observes. Pas d'énoncé ni de correction imposés.</p>
+    <label class="pf-row"><span>Contenu de départ</span><select class="sm" id="np-tpl">
+      <option value="min"${copy ? '' : ' selected'}>main.c minimal (InitSysCtrl + boucle while)</option>
+      <option value="vide">main.c vide (seulement l'#include)</option>
+      <option value="copie"${copy ? ' selected' : ''}>copie des fichiers du projet actif (${esc(cur.proj)})</option></select></label>
+    <p class="hint" style="margin-top:8px">Nom du projet :</p>`,
+    onOk: n => {
+      const err = checkProjName(n); if (err) return err;
+      createProject(n, $('np-tpl').value); return null;
+    }
+  });
+}
+function createProject(name, tpl) {
+  const u = normUser({ id: 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name, created: Date.now() });
+  const src = S.projects[cur.id];
+  S.user.push(u); const ex = addUserExo(u);
+  const p = S.projects[u.id] = {};
+  if (tpl === 'copie' && src) {
+    p.files = src.files.map(f => ({ id: f.id, name: f.name, code: f.code, updated: Date.now() }));
+    p.sensors = JSON.parse(JSON.stringify(src.sensors));
+    if (cur.user) { u.mods.push(...cur.u.mods); u.scope = JSON.parse(JSON.stringify(cur.u.scope)); ex.scope = u.scope; u.notes = cur.u.notes; u.hach = Object.assign({}, cur.u.hach); u.commut = Object.assign({}, cur.u.commut); }
+  } else p.files = [{ id: 'main', name: 'main.c', code: tpl === 'vide' ? '#include "DSP28x_Project.h"\n\n' : ex.starter, updated: Date.now() }];
+  p.init = true;
+  initProject(S, ex);
+  for (const f of p.files) queueRemote(u.id, f);
+  saveLocal(); selectExercise(u.id); renderExTabs(); renderTree();
+  toast(`Projet ${name} créé`);
+}
+function renameProjectDlg(id) {
+  const ex = EXO(id); if (!ex.user) return;
+  dialog({
+    title: `Renommer le projet ${ex.proj}`, okLabel: 'Renommer', input: { label: 'Nouveau nom', value: ex.proj },
+    onOk: n => { const err = checkProjName(n, id); if (err) return err; ex.u.name = n; ex.proj = ex.tab = n; ex.title = 'Projet ' + n; saveLocal(); renderExTabs(); renderTree(); updateStatus(); if (cur.id === id) setEnonce(); return null; }
+  });
+}
+function deleteProjectDlg(id) {
+  const ex = EXO(id); if (!ex.user) return;
+  const nf = S.projects[id] ? S.projects[id].files.length : 0;
+  dialog({
+    title: `Supprimer le projet ${ex.proj} ?`, okLabel: 'Supprimer le projet', danger: true,
+    body: `<p>Le projet <b>${esc(ex.proj)}</b> et ses ${nf} fichier${nf > 1 ? 's' : ''} seront supprimés définitivement. Exporte tes projets d'abord (Préférences ▸ Données) si tu veux les garder.</p>`,
+    onOk: () => {
+      if (active() && progEx === id) M.terminate();
+      if (cur.id === id) selectExercise('libre');
+      if (DBC && S.projects[id]) for (const f of S.projects[id].files) { S.tomb[docId(id, f.id)] = Date.now(); pend.set(docId(id, f.id), { timer: null, busy: false, again: false }); flush(id, f.id); }
+      delete S.projects[id]; S.user = S.user.filter(u => u.id !== id);
+      const k = EXOS.findIndex(e => e.id === id); if (k >= 0) EXOS.splice(k, 1);
+      saveLocal(); renderExTabs(); renderTree(); toast(`Projet ${ex.proj} supprimé`); return null;
+    }
+  });
+}
+
+/* onglet de droite d'un projet : notes + branchements */
+function userPanel() {
+  const u = cur.u;
+  const pins = PIN_CHOICES().filter(([n]) => n < 16).map(([n, t]) => `<option value="${n}">${esc(t)}</option>`).join('');
+  return `<h2>${esc(u.name)}</h2><p class="ref">Projet personnel · créé le ${new Date(u.created || Date.now()).toLocaleDateString('fr-FR')}</p>
+  <h3>Notes du projet</h3>
+  <textarea id="un-notes" class="un-notes" spellcheck="true" placeholder="Colle ici ton cahier des charges, tes calculs (TBPRD, k, CMPA, DBRED…) ou ce qu'il te reste à faire. C'est enregistré avec le projet.">${esc(u.notes)}</textarea>
+  <h3>Branchements sur la carte</h3>
+  <p class="hint">La carte est toujours là (LD1–LD4, PB1, PB2, roue SW2, VR1/VR2 sur ADCINA0/A1). Ajoute les modules dont ton montage a besoin :</p>
+  <div class="un-mods">${USER_MODS.map(([k, l, d]) => `<label class="pf-ck"><input type="checkbox" data-umod="${k}"${u.mods.includes(k) ? ' checked' : ''}> <span>${esc(l)}<small>${esc(d)}</small></span></label>`).join('')}</div>
+  ${u.mods.includes('hacheur') ? `<div class="un-cfg"><b>Hacheur</b>
+    <label class="hint">H commandé par <select class="sm" id="uh-pin">${PIN_CHOICES().filter(([n]) => n < 12).map(([n, t]) => `<option value="${n}"${u.hach.pin === n ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
+    <label class="hint">H fermé quand la broche vaut <select class="sm" id="uh-act"><option value="1"${u.hach.act ? ' selected' : ''}>1</option><option value="0"${u.hach.act ? '' : ' selected'}>0</option></select></label>
+    <label class="hint">E = <input type="number" class="sn-in" id="uh-e" min="1" max="600" step="1" value="${u.hach.E}"> V</label></div>` : ''}
+  ${u.mods.includes('commut') ? `<div class="un-cfg"><b>Commutateur</b>
+    <label class="hint">contact a <select class="sm" id="uc-b0">${pins.replace(`value="${u.commut.b0}"`, `value="${u.commut.b0}" selected`)}</select></label>
+    <label class="hint">contact b <select class="sm" id="uc-b1">${pins.replace(`value="${u.commut.b1}"`, `value="${u.commut.b1}" selected`)}</select></label>
+    <p class="keyhint">Position 1 : a = 0, b = 0 · position 2 : a = 1, b = 0 · position 3 : a = 0, b = 1 · position 4 : a = 1, b = 1. Les broches choisies doivent être des entrées.</p></div>` : ''}
+  <h3>Broches des modules ePWM</h3>
+  <table><tr><th>Module</th><th>Sortie A</th><th>Sortie B</th></tr>${[1, 2, 3, 4, 5, 6].map(i => `<tr><td>ePWM${i}</td><td>GPIO${2 * i - 2}</td><td>GPIO${2 * i - 1}${i === 5 ? ' (LD1)' : i === 6 ? ' (LD2)' : ''}</td></tr>`).join('')}</table>
+  <p class="hint">GPAMUX1 = 01 sur la broche pour sortir le signal ePWM (sinon il reste interne au module). LD1 et LD2 sont sur les sorties B de ePWM5 et ePWM6 : leur éclat suit le rapport cyclique.</p>`;
+}
+let notesT = null;
+function bindUserPanel() {
+  const u = cur.u; const el = $('enonce');
+  const n = $('un-notes'); if (n) n.addEventListener('input', () => { u.notes = n.value; clearTimeout(notesT); notesT = setTimeout(saveLocal, 400); });
+  el.querySelectorAll('[data-umod]').forEach(c => c.addEventListener('change', () => {
+    const k = c.dataset.umod, i = u.mods.indexOf(k);
+    if (c.checked && i < 0) u.mods.push(k); if (!c.checked && i >= 0) u.mods.splice(i, 1);
+    saveLocal(); renderModules(); resetModules(); hw.touchAll(); setEnonce(); showRight('enonce');
+    if (c.checked) toast('Module branché : il apparaît sous la carte, onglet « Carte »');
+  }));
+  const num = (id, f) => { const e = $(id); if (e) e.addEventListener('change', () => { f(e.value); saveLocal(); renderModules(); hw.touchAll(); }); };
+  num('uh-pin', v => { u.hach.pin = +v; }); num('uh-act', v => { u.hach.act = +v; }); num('uh-e', v => { u.hach.E = Math.max(1, Math.min(600, Number(v) || 24)); });
+  num('uc-b0', v => { u.commut.b0 = +v; }); num('uc-b1', v => { u.commut.b1 = +v; });
+}
+
+/* signaux de l'analyseur logique (projets personnels) */
+function sigsDlg() {
+  if (!cur.user) return;
+  const sel = new Set(cur.u.scope.sigs.map(s => s[0]));
+  dialog({
+    title: 'Signaux de l\'analyseur logique', okLabel: 'Afficher', wide: true,
+    body: `<p class="hint">Coche les broches à observer (12 au plus). Les sorties ePWM n'apparaissent que si GPAMUX1 les relie à la broche.</p>
+    <div class="un-sigs">${PIN_CHOICES().map(([n, t]) => `<label class="pf-ck"><input type="checkbox" data-sig="${n}"${sel.has(n) ? ' checked' : ''}> <span>${esc(t)}</span></label>`).join('')}</div><p class="derr" id="sig-err"></p>`,
+    onOk: () => {
+      const list = [...document.querySelectorAll('[data-sig]')].filter(c => c.checked).map(c => +c.dataset.sig);
+      if (!list.length) { $('sig-err').textContent = 'Coche au moins une broche.'; return 'Coche au moins une broche.'; }
+      if (list.length > 12) return 'Douze signaux au plus.';
+      const sc0 = cur.u.scope; sc0.sigs = list.map(n => [n, sigLabel(n)]);
+      if (!list.includes(sc0.trig)) sc0.trig = list[0];
+      saveLocal(); scopeConfig(); drawScope(); return null;
+    }
+  });
+}
+function rememberScope() { if (!cur.user) return; Object.assign(cur.u.scope, { tb: sc.tb, mode: sc.mode, trig: sc.trig, edge: sc.edge }); saveLocal(); }
+
+/* rapport cyclique d'une broche sur une fenêtre de temps simulé (niveau Z compté comme 0) */
+function pinDuty(n, win) {
+  const t1 = now(), t0 = Math.max(0, t1 - win); const L = hw.logs[n]; if (!L || t1 <= t0) return hw.level(n) === 1 ? 1 : 0;
+  let k = bsearch(L.t, t0); let v = k < 0 ? (L.v.length ? L.v[0] : 2) : L.v[k]; let tp = t0, hi = 0;
+  for (k = k + 1; k < L.t.length && L.t[k] <= t1; k++) { if (v === 1) hi += L.t[k] - tp; tp = L.t[k]; v = L.v[k]; }
+  if (v === 1) hi += t1 - tp;
+  return hi / (t1 - t0);
+}
+
+/* modules hacheur + commutateur */
+let hachAng = 0, hachLast = 0, hachW = 0;
+function hacheurHTML() {
+  const h = cur.u.hach;
+  return `<section class="mod"><header>Hacheur série + moteur CC<span class="grow"></span><span class="chip">H ← GPIO${h.pin} (${EpwmSim.PIN_NAME(h.pin)})</span></header><div class="mbody">
+  <svg viewBox="0 0 230 120" width="230" height="120" aria-label="Hacheur série et moteur" class="hach">
+    <text x="8" y="16" font-size="11" fill="currentColor" font-family="Arial">E = ${fnum(h.E)} V</text>
+    <path d="M30 24 V40 M20 40 H40 M24 46 H36 M30 46 V104 H170 V86" stroke="currentColor" fill="none" stroke-width="1.6"/>
+    <path d="M30 24 H70" stroke="currentColor" fill="none" stroke-width="1.6"/>
+    <g id="hc-sw"><line x1="70" y1="24" x2="100" y2="14" stroke="#D63B30" stroke-width="3" stroke-linecap="round"/></g>
+    <text x="78" y="44" font-size="10" fill="currentColor" font-family="Arial">H</text>
+    <path d="M100 24 H170 V38" stroke="currentColor" fill="none" stroke-width="1.6"/>
+    <path d="M130 104 V78 M122 78 H138 L130 64 Z M122 64 H138 M130 64 V24" stroke="currentColor" fill="none" stroke-width="1.4"/>
+    <text x="140" y="74" font-size="9" fill="currentColor" font-family="Arial">D</text>
+    <circle cx="170" cy="62" r="22" fill="none" stroke="currentColor" stroke-width="2"/><g id="hc-rot"><path d="M170 44 L174 62 L170 80 L166 62 Z" fill="#2F6FB5"/></g><text x="170" y="66" text-anchor="middle" font-size="10" font-weight="700" fill="currentColor" font-family="Arial">M</text>
+    <text x="198" y="60" font-size="10" fill="currentColor" font-family="Arial">Umcc</text>
+  </svg>
+  <div class="wires"><span>Broche GPIO${h.pin}</span><span id="hc-lv" class="lvl">Z</span><span></span><span>H fermé</span><span id="hc-a" class="lvl">—</span><span>du temps</span><span>⟨Umcc⟩ mesurée</span><span id="hc-u" class="lvl">—</span><span></span><span>Vitesse</span><span id="hc-n" class="lvl">—</span><span></span></div>
+  <p class="keyhint">H est fermé quand GPIO${h.pin} vaut ${h.act}. Mesure faite sur les 20 dernières ms de temps simulé (voltmètre en position « moyenne »). Réglages dans l'onglet Projet.</p></div></section>`;
+}
+function updateHacheur() {
+  const h = cur.u.hach; const lv = hw.level(h.pin);
+  const d = pinDuty(h.pin, 20000); const closed = h.act ? d : (lv === 2 ? 0 : 1 - d);
+  const U = closed * h.E;
+  const set = (id, txt, cls) => { const e = $(id); if (e && e._v !== txt) { e._v = txt; e.textContent = txt; if (cls != null) e.className = cls; } };
+  set('hc-lv', lvlTxt(lv), lvlCls(lv)); set('hc-a', `${fv(closed * 100, 1)} %`); set('hc-u', `${fv(U, 2)} V`, 'lvl' + (U > 0.01 ? ' h' : ''));
+  const t = performance.now(); const dt = Math.min(100, t - (hachLast || t)); hachLast = t;
+  hachW += ((U / h.E) - hachW) * Math.min(1, dt / 250);          // inertie du moteur
+  set('hc-n', `${fv(hachW * 100, 0)} % de la vitesse max`);
+  hachAng = (hachAng + dt * 0.9 * hachW) % 360; const g = $('hc-rot'); if (g) g.setAttribute('transform', `rotate(${hachAng} 170 62)`);
+  const on = (h.act ? lv === 1 : lv === 0); const sw = $('hc-sw'); if (sw && sw._v !== on) { sw._v = on; sw.firstElementChild.setAttribute('y2', on ? '24' : '14'); sw.firstElementChild.setAttribute('stroke', on ? '#2E9D3A' : '#D63B30'); }
+}
+function commutHTML() {
+  const c = cur.u.commut;
+  return `<section class="mod"><header>Commutateur 4 positions<span class="grow"></span><span class="chip">a : GPIO${c.b0} · b : GPIO${c.b1}</span></header><div class="mbody">
+  <div class="persp" role="group" aria-label="Position du commutateur">${[1, 2, 3, 4].map(p => `<button type="button" data-cpos="${p}" aria-pressed="${c.pos === p}">Position ${p}</button>`).join('')}</div>
+  <div class="wires"><span>contact a (GPIO${c.b0})</span><span id="cm-a" class="lvl">0</span><span></span><span>contact b (GPIO${c.b1})</span><span id="cm-b" class="lvl">0</span><span></span></div></div></section>`;
+}
+function bindCommut() {
+  document.querySelectorAll('[data-cpos]').forEach(b => b.addEventListener('click', () => {
+    cur.u.commut.pos = +b.dataset.cpos; saveLocal();
+    document.querySelectorAll('[data-cpos]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    hw.touch(cur.u.commut.b0); hw.touch(cur.u.commut.b1);
+  }));
+}
+function updateCommut() {
+  const c = cur.u.commut;
+  for (const [id, n] of [['cm-a', c.b0], ['cm-b', c.b1]]) { const e = $(id); const v = hw.level(n); if (e && e._v !== v) { e._v = v; e.textContent = lvlTxt(v); e.className = lvlCls(v); } }
+}
+
+/* ====================== VUE ePWM (onglet du bas) ====================== */
+let pwmSel = +(S.ui.pwmSel || 0), pwmBuilt = false, pwmSig = '';
+function pwmModule() {
+  if (pwmSel) return pwmSel;
+  const E = hw.epwm; const m = E.m.find(x => x.started && E.running(x)) || E.m.find(x => x.started) || E.m.find(x => E.clockOn(x));
+  return m ? m.i : 1;
+}
+function buildEpwmPane() {
+  $('bp-epwm').innerHTML = `<div class="pwmbar"><label class="hint" for="pw-mod">Module</label><select class="sm" id="pw-mod"><option value="0">auto (le module actif)</option>${[1, 2, 3, 4, 5, 6].map(i => `<option value="${i}">ePWM${i} · A = GPIO${2 * i - 2}, B = GPIO${2 * i - 1}</option>`).join('')}</select><span class="grow"></span><span class="rd" id="pw-sum"></span></div>
+  <div class="pwmwrap"><canvas id="pw-cv" aria-label="Chronogramme : compteur TBCTR, comparateurs CMPA et CMPB, sorties A et B"></canvas></div>
+  <div id="pw-info"></div>`;
+  $('pw-mod').value = String(pwmSel);
+  $('pw-mod').addEventListener('change', e => { pwmSel = +e.target.value; S.ui.pwmSel = pwmSel; saveLocal(); pwmSig = ''; renderEpwm(true); });
+  pwmBuilt = true;
+}
+const fHz = f => !Number.isFinite(f) ? '—' : f >= 1e6 ? fr(+(f / 1e6).toPrecision(4)) + ' MHz' : f >= 1000 ? fr(+(f / 1000).toPrecision(4)) + ' kHz' : fr(+f.toPrecision(4)) + ' Hz';
+const AQN = ['rien', 'mise à 0', 'mise à 1', 'inversion'];
+function renderEpwm(force) {
+  if (bottomTab !== 'epwm' && !force) return;
+  if (!hw.epwm) return;
+  if (!pwmBuilt) buildEpwmPane();
+  const i = pwmModule(); const s = hw.epwm.snapshot(i); const R = EpwmSim.REG;
+  drawEpwm(s);
+  const T = s.tick; const Lc = s.mode === 2 ? 2 * s.prd : s.prd + 1; const Tp = Lc * T;
+  const fd = (reg, names) => R[reg].fields.filter(f => !names || names.includes(f.name)).map(f => { const v = (s.regs[reg] >> f.lo) & ((1 << f.w) - 1); return `<span class="fd${v ? ' on' : ''}" title="${esc(f.desc)}">${f.name}=${v}</span>`; }).join('');
+  const aq = reg => R[reg].fields.map(f => { const v = (s.regs[reg] >> f.lo) & 3; return `<span class="fd${v ? ' on' : ''}" title="${esc(f.desc)}">${f.name}=${v}${v ? ' · ' + AQN[v] : ''}</span>`; }).join('');
+  const us = n => fr(+(n * T).toFixed(3)) + ' µs';
+  const outRow = (ch, mux, pin) => {
+    const mm = ch === 'A' ? s.mA : s.mB; const lv = s.out[ch];
+    return `<tr><td class="mono">ePWM${i}${ch}</td><td class="mono">GPIO${pin}</td><td>${mux === 1 ? '<span class="v good">GPAMUX1 = 01 · sur la broche</span>' : `<span class="v bad">GPAMUX1 = ${String(mux).padStart(2, '0')} · interne</span>`}</td><td class="mono">${lv === 2 ? 'Z' : lv}</td><td class="mono">${mm.f ? fHz(mm.f) : '—'}</td><td class="mono">${mm.f ? fr((mm.duty * 100).toFixed(1)) + ' %' : (lv === 1 ? '100 % (fixe)' : '0 % (fixe)')}</td><td class="mono">${mm.f ? fmtT(mm.thigh) : '—'}</td></tr>`;
+  };
+  const state = !s.clockOn ? `<span class="v bad">horloge coupée : SysCtrlRegs.PCLKCR1.bit.EPWM${i}ENCLK = 0</span>` : s.mode === 3 ? '<span class="v">compteur arrêté (CTRMODE = 11, valeur au reset)</span>' : s.running ? `<span class="v good">en marche · ${esc(s.modeName)}</span>` : '<span class="v bad">en attente de TBCLKSYNC = 1</span>';
+  let h = `<div class="pad pw-head">${state}
+    <span>TBCLK = 150 MHz / (HSPCLKDIV ${s.hsp} × CLKDIV ${s.clk}) = <b>${fHz(s.ftb * 1e6)}</b> (T<sub>TBCLK</sub> = ${fr(+(T * 1000).toFixed(3))} ns)</span>
+    ${s.mode !== 3 && s.prd ? `<span>période du compteur = ${s.mode === 2 ? '2 × TBPRD' : s.mode === 1 ? '(TBPRD + 1)' : '(TBPRD + 1)'} × T<sub>TBCLK</sub> = <b>${fmtT(Tp)}</b> → <b>${fHz(1e6 / Tp)}</b></span>` : ''}
+    <span>TBCTR = <b class="mono">${s.ctr}</b>${s.mode === 2 ? (s.dir > 0 ? ' ↑' : ' ↓') : ''}</span></div>
+  <table class="grid"><thead><tr><th>Sortie</th><th>Broche</th><th>Liaison</th><th>Niveau</th><th>f mesurée</th><th>Rapport cyclique mesuré</th><th>Temps à 1</th></tr></thead><tbody>${outRow('A', s.muxA, 2 * i - 2)}${outRow('B', s.muxB, 2 * i - 1)}</tbody></table>
+  <table class="grid pw-regs"><thead><tr><th>Registre</th><th>Valeur</th><th>Détail</th></tr></thead><tbody>
+  <tr><td class="mono">TBCTL</td><td class="mono">${hex4(s.regs.TBCTL)}</td><td>${fd('TBCTL')}</td></tr>
+  <tr><td class="mono">TBPRD</td><td class="mono">${s.prd}</td><td>${s.prdSh !== s.prd ? `fantôme = ${s.prdSh} (chargé au prochain TBCTR = 0)` : 'actif'}</td></tr>
+  <tr><td class="mono">TBPHS</td><td class="mono">${(s.regs.TBPHS >>> 16)}</td><td>${fd('TBCTL', ['PHSEN', 'PHSDIR', 'SYNCOSEL'])}</td></tr>
+  <tr><td class="mono">CMPA</td><td class="mono">${s.cmpa}</td><td>${s.shA ? `fantôme = ${s.cmpaSh} (en attente) · ` : ''}${(s.regs.CMPA & 0xFFFF) ? `CMPAHR = ${s.regs.CMPA & 0xFFFF} · ` : ''}${fd('CMPCTL', ['SHDWAMODE', 'LOADAMODE'])}</td></tr>
+  <tr><td class="mono">CMPB</td><td class="mono">${s.cmpb}</td><td>${s.shB ? `fantôme = ${s.cmpbSh} (en attente) · ` : ''}${fd('CMPCTL', ['SHDWBMODE', 'LOADBMODE'])}</td></tr>
+  <tr><td class="mono">AQCTLA</td><td class="mono">${hex4(s.regs.AQCTLA)}</td><td>${aq('AQCTLA')}</td></tr>
+  <tr><td class="mono">AQCTLB</td><td class="mono">${hex4(s.regs.AQCTLB)}</td><td>${aq('AQCTLB')}</td></tr>
+  <tr><td class="mono">AQCSFRC</td><td class="mono">${hex4(s.regs.AQCSFRC)}</td><td>${fd('AQCSFRC')}</td></tr>
+  <tr><td class="mono">DBCTL</td><td class="mono">${hex4(s.regs.DBCTL)}</td><td>${fd('DBCTL')} · DBRED = ${s.regs.DBRED} (${us(s.regs.DBRED)}) · DBFED = ${s.regs.DBFED} (${us(s.regs.DBFED)})</td></tr>
+  <tr><td class="mono">ETSEL</td><td class="mono">${hex4(s.regs.ETSEL)}</td><td>${fd('ETSEL')}</td></tr>
+  <tr><td class="mono">ETPS</td><td class="mono">${hex4(s.regs.ETPS)}</td><td>${fd('ETPS')} · SOCA émis : ${s.nSoca} · SOCB : ${s.nSocb} · INT : ${s.nInt}</td></tr>
+  <tr><td class="mono">ETFLG</td><td class="mono">${hex4(s.regs.ETFLG)}</td><td>${fd('ETFLG')}</td></tr>
+  <tr><td class="mono">TZ</td><td class="mono">${hex4(s.regs.TZFLG)}</td><td>${fd('TZFLG')} · ${fd('TZCTL')}${s.ost || s.cbc ? ' · <span class="v bad">sorties en défaut</span>' : ''}</td></tr>
+  </tbody></table>
+  <p class="pad hint">Les valeurs « mesurées » viennent des fronts réellement simulés. Survole un champ pour sa signification.${hw.epwm.live ? '' : ' Dans les projets fournis, le SOCA de l\'ADC reste simulé à fréquence fixe ; dans tes projets, il vient des modules ePWM.'}</p>`;
+  $('pw-sum').textContent = s.running && s.prd ? `ePWM${i} : ${fHz(1e6 / Tp)}` : `ePWM${i} : arrêté`;
+  if (h !== pwmSig) { pwmSig = h; $('pw-info').innerHTML = h; }
+}
+function drawEpwm(s) {
+  const cv = $('pw-cv'); if (!cv) return; const c2 = cv.getContext('2d');
+  const wrap = cv.parentElement; const W = Math.max(300, wrap.clientWidth - 16), H = 226; const dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.height = H + 'px'; }
+  c2.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const cs = getComputedStyle(document.documentElement); const col = k => cs.getPropertyValue(k).trim();
+  c2.fillStyle = col('--scope-bg'); c2.fillRect(0, 0, W, H);
+  c2.font = '11px Consolas, "DejaVu Sans Mono", monospace'; c2.textBaseline = 'middle';
+  const L = 96, PW = W - L - 12;
+  const Lc = s.mode === 2 ? 2 * s.prd : s.prd + 1; const Tp = Lc * s.tick;
+  if (!s.running || !s.prd || s.lastZro == null || !(Tp > 0)) {
+    c2.fillStyle = col('--scope-ink'); c2.textAlign = 'center';
+    c2.fillText(!s.clockOn ? `ePWM${s.i} : horloge coupée (PCLKCR1.bit.EPWM${s.i}ENCLK = 0)` : s.mode === 3 ? `ePWM${s.i} : compteur arrêté (CTRMODE = 11)` : !s.prd ? `ePWM${s.i} : TBPRD = 0` : `ePWM${s.i} : en attente du premier TBCTR = 0`, W / 2, H / 2);
+    return;
+  }
+  const t1 = s.lastZro, t0 = t1 - 2 * Tp; const X = t => L + (t - t0) / (t1 - t0) * PW;
+  const top = 14, cH = 112, yA = top + cH + 16, yB = yA + 30, rowH = 22;
+  const ymax = Math.max(s.prd, s.cmpa <= s.prd ? s.cmpa : 0, s.cmpb <= s.prd ? s.cmpb : 0, 1);
+  const Y = v => top + cH - v / ymax * cH;
+  c2.strokeStyle = col('--scope-grid'); c2.lineWidth = 1;
+  for (let d = 0; d <= 8; d++) { const x = Math.round(L + PW * d / 8) + .5; c2.beginPath(); c2.moveTo(x, top - 4); c2.lineTo(x, yB + rowH + 2); c2.stroke(); }
+  c2.fillStyle = col('--scope-ink'); c2.textAlign = 'center';
+  for (let d = 0; d <= 8; d += 2) c2.fillText(fmtT((t1 - t0) * d / 8), L + PW * d / 8, H - 8);
+  // compteur
+  c2.textAlign = 'left'; c2.fillText('TBCTR', 6, top + cH / 2); c2.fillText('0', 6, Y(0)); c2.fillText('TBPRD=' + s.prd, 6, Y(s.prd));
+  c2.strokeStyle = col('--scope-ink'); c2.lineWidth = 1.4; c2.beginPath();
+  for (let k = 0; k < 2; k++) {
+    const a = t0 + k * Tp;
+    if (s.mode === 0) { c2.moveTo(X(a), Y(0)); c2.lineTo(X(a + Tp * s.prd / Lc), Y(s.prd)); c2.lineTo(X(a + Tp), Y(s.prd)); c2.lineTo(X(a + Tp), Y(0)); }
+    else if (s.mode === 1) { c2.moveTo(X(a), Y(0)); c2.lineTo(X(a + Tp / Lc), Y(s.prd)); c2.lineTo(X(a + Tp), Y(0)); }
+    else { c2.moveTo(X(a), Y(0)); c2.lineTo(X(a + Tp / 2), Y(s.prd)); c2.lineTo(X(a + Tp), Y(0)); }
+  }
+  c2.stroke();
+  const hl = (v, color, name) => { if (v > s.prd) { c2.fillStyle = color; c2.fillText(`${name} = ${v} > TBPRD : jamais atteint`, L + 6, top + (name === 'CMPA' ? 6 : 18)); return; } c2.strokeStyle = color; c2.setLineDash([5, 4]); c2.beginPath(); c2.moveTo(L, Math.round(Y(v)) + .5); c2.lineTo(L + PW, Math.round(Y(v)) + .5); c2.stroke(); c2.setLineDash([]); c2.fillStyle = color; c2.textAlign = 'right'; c2.fillText(`${name} = ${v}`, L + PW - 4, Y(v) - 7); c2.textAlign = 'left'; };
+  hl(s.cmpa, col('--scope-a'), 'CMPA'); hl(s.cmpb, col('--scope-b'), 'CMPB');
+  // sorties A et B (après temps morts)
+  const row = (y, Lg, color, label) => {
+    c2.fillStyle = col('--scope-ink'); c2.textAlign = 'left'; c2.fillText(label, 6, y + rowH / 2);
+    const hi = y + 3, lo = y + rowH - 3, mid = (hi + lo) / 2; c2.strokeStyle = color; c2.lineWidth = 1.6;
+    let k = bsearch(Lg.t, t0); let v = k < 0 ? (Lg.v.length ? (Lg.v[0] === 1 ? 0 : Lg.v[0]) : 0) : Lg.v[k]; let px = L;
+    const yv = v => v === 2 ? mid : v ? hi : lo;
+    c2.beginPath(); c2.moveTo(L, yv(v));
+    for (k = k + 1; k < Lg.t.length && Lg.t[k] <= t1; k++) { const x = X(Lg.t[k]); c2.lineTo(x, yv(v)); c2.lineTo(x, yv(Lg.v[k])); v = Lg.v[k]; px = x; }
+    c2.lineTo(L + PW, yv(v)); c2.stroke();
+    c2.strokeStyle = col('--scope-grid'); c2.lineWidth = 1; c2.beginPath(); c2.moveTo(L, y + rowH + .5); c2.lineTo(L + PW, y + rowH + .5); c2.stroke();
+  };
+  row(yA, s.log.A, col('--scope-a'), `ePWM${s.i}A`); row(yB, s.log.B, col('--scope-b'), `ePWM${s.i}B`);
+}
+
+/* ====================== AIDE-MÉMOIRE ePWM ====================== */
+function helpEpwm() {
+  dialog({ title: 'Aide-mémoire ePWM', cancelLabel: 'Fermer', wide: true, body: `<div class="enonce">
+  <h3>Les symboles</h3>
+  <table><tr><th>Symbole</th><th>Signification</th><th>Unité</th></tr>
+  <tr><td>F<sub>CPU</sub></td><td>fréquence d'horloge du DSP (SYSCLKOUT) : 150 MHz sur la carte</td><td>Hz</td></tr>
+  <tr><td>k</td><td>prédiviseur du compteur : k = HSPCLKDIV × CLKDIV (valeurs de division, pas les codes binaires)</td><td>—</td></tr>
+  <tr><td>T<sub>TBCLK</sub></td><td>période d'un pas du compteur : T<sub>TBCLK</sub> = k / F<sub>CPU</sub></td><td>s</td></tr>
+  <tr><td>F</td><td>fréquence voulue du signal (période du compteur)</td><td>Hz</td></tr>
+  <tr><td>TBPRD</td><td>valeur haute du compteur, 16 bits (0 à 65 535)</td><td>pas</td></tr>
+  <tr><td>CMPA, CMPB</td><td>valeurs de comparaison (16 bits) qui déclenchent les actions CAU / CAD / CBU / CBD</td><td>pas</td></tr>
+  <tr><td>DBRED, DBFED</td><td>retards des fronts montant / descendant (10 bits)</td><td>pas de TBCLK</td></tr></table>
+  <h3>Période du compteur</h3>
+  <ul><li>Comptage continu (CTRMODE = 00) : TBPRD = F<sub>CPU</sub> / (k × F) − 1</li>
+  <li>Comptage / décomptage (CTRMODE = 10) : TBPRD = F<sub>CPU</sub> / (2 × k × F)</li>
+  <li>Si TBPRD dépasse 65 535, on prend le plus petit k qui le fait rentrer sur 16 bits.</li></ul>
+  <h3>Codes des diviseurs (TBCTL)</h3>
+  <table><tr><th>Code</th><th>000</th><th>001</th><th>010</th><th>011</th><th>100</th><th>101</th><th>110</th><th>111</th></tr>
+  <tr><td>HSPCLKDIV</td><td>/1</td><td>/2</td><td>/4</td><td>/6</td><td>/8</td><td>/10</td><td>/12</td><td>/14</td></tr>
+  <tr><td>CLKDIV</td><td>/1</td><td>/2</td><td>/4</td><td>/8</td><td>/16</td><td>/32</td><td>/64</td><td>/128</td></tr></table>
+  <p class="hint">Au reset, TBCTL = 0x0083 : CTRMODE = 11 (compteur arrêté) et HSPCLKDIV = 001 (/2). Si tu n'écris pas HSPCLKDIV, le compteur va deux fois moins vite que prévu.</p>
+  <h3>Actions AQCTLA / AQCTLB (2 bits par événement)</h3>
+  <p>00 rien · 01 mise à 0 · 10 mise à 1 · 11 inversion. Événements : ZRO (TBCTR = 0), PRD (TBCTR = TBPRD), CAU / CAD (CMPA en comptant / en décomptant), CBU / CBD (CMPB).</p>
+  <h3>Comment le simulateur se comporte (comme le DSP)</h3>
+  <ul><li>Les registres d'un module ne répondent que si son horloge PCLKCR1.EPWMxENCLK = 1 (entre EALLOW et EDIS).</li>
+  <li>TBPRD, TBCTR, CMPB, DBRED et DBFED sont des Uint16 simples : pas de .all ni de .bit. CMPA et TBPHS sont des unions 32 bits : la valeur s'écrit dans .half.CMPA / .half.TBPHS (16 bits de poids fort).</li>
+  <li>TBPRD et CMPA passent par un registre fantôme : une nouvelle valeur écrite pendant le comptage est prise au prochain TBCTR = 0 (réglages PRDLD, SHDWAMODE, LOADAMODE).</li>
+  <li>Le temps mort vaut DBRED × T<sub>TBCLK</sub> (et DBFED × T<sub>TBCLK</sub>), d'après la documentation TI du F28335.</li>
+  <li>Les sorties n'arrivent sur les broches que si GPAMUX1 = 01 (fonction EPWMxA / EPWMxB).</li>
+  <li>Les SOCA / SOCB démarrent l'ADC si ETSEL.SOCxEN = 1, ETPS.SOCxPRD ≠ 0 et AdcRegs.ADCTRL2 l'autorise. Les interruptions (PIE) ne sont pas exécutées : scrute ETFLG.bit.INT.</li>
+  <li>Synchronisation : ePWM1 → ePWM2 → … → ePWM6 par SYNCO / SYNCI (SYNCOSEL, PHSEN, TBPHS, PHSDIR).</li></ul>
+  <h3>Où regarder</h3>
+  <p>Onglet <b>ePWM</b> en bas : compteur, CMPA / CMPB et sorties sur deux périodes, fréquence et rapport cyclique mesurés. <b>Analyseur logique</b> : les broches (bouton « Signaux… » dans tes projets).</p></div>` });
+}
+
 /* ---------- démarrage ---------- */
 $('boardwrap').innerHTML = boardSVG();
 bindBoard(); bindVR();
@@ -2023,6 +2441,7 @@ setPersp(persp); showBottom(bottomTab); renderProblems(); updateToolbar(); updat
   BRIDGE.on('prefs', m => { const np = readPrefs(m.prefs); for (const k of Object.keys(np)) P[k] = np[k]; applyPrefs(); renderSensors(); });
 }
 log('info', 'Simulateur prêt. Choisis un projet en haut, écris ton code, puis Debug (F11) ou Resume (F8).', { not: true });
+log('info', 'Nouveau (v1.2) : les 6 modules ePWM sont simulés (compteurs, comparateurs, actions, temps morts, synchronisation, SOCA vers l\'ADC). Crée ton propre projet avec « ＋ Nouveau projet » (ou Fichier ▸ Nouveau projet CCS), puis observe dans l\'onglet ePWM et l\'Analyseur logique. Aide ▸ Aide-mémoire ePWM.', { not: true });
 log('info', 'Capteurs à droite (onglet Capteurs ADC), registres et tracé en bas (onglet ADC). Autocomplétion : Ctrl+Espace ; Ctrl+Maj+Espace pour l\'activer ou la désactiver.', { not: true });
 log('info', 'Câblage de la carte : LD1 = GPIO9, LD2 = GPIO11, LD3 = GPIO34, LD4 = GPIO49, PB1 = GPIO17, PB2 = GPIO48, roue codeuse SW2 = GPIO12 à 15.', { not: true });
 setSave('local');

@@ -196,6 +196,7 @@ class Model {
   /* --- moteur à événements (rattrape le temps simulé) --- */
   update(T) {
     if (T == null) T = this.now();
+    if (this.hw.epwm && !this.hw.epwm.busy) this.hw.epwm.update(T);   // les SOCA / SOCB des ePWM d'abord
     let guard = 0;
     while (guard++ < 100000) {
       let tEv = Infinity, kind = null;
@@ -277,6 +278,7 @@ class Model {
   }
   schedulePwm() {
     const t = this.now();
+    if (this.hw.epwm && this.hw.epwm.live) { this.socaNext = null; this.socbNext = null; return; }   // SOCA / SOCB réels (modules ePWM)
     const a = (this.r.ADCTRL2 >> 8) & 1, b = this.cascaded ? (this.r.ADCTRL2 >> 15) & 1 : this.r.ADCTRL2 & 1;
     if (a && this.socaNext == null) { const P = 1e6 / Math.max(1, this.opts.socaHz); this.socaNext = Math.ceil(t / P) * P || P; this.note('soca', `Déclenchement par l'ePWM (SOCA) : les timers ePWM ne sont pas simulés, le simulateur envoie un SOCA à ${this.opts.socaHz} Hz (réglable dans « Capteurs ADC »).`); }
     if (!a) this.socaNext = null;
@@ -311,9 +313,11 @@ class Model {
     val = Number(val) >>> 0;
     const { base, reg, sel, field } = this.split(p);
     if (base === 'SysCtrlRegs') {
+      if (this.hw.epwm) this.hw.epwm.update();
       if (!this.hw.eallow) { this.warn('eal-pclk', 'Écriture dans SysCtrlRegs.PCLKCR0 ignorée : ce registre est protégé, il faut EALLOW; avant (et EDIS; après).'); return val; }
       if (sel === 'bit') { const f = fieldOf(PCLKCR0, field); const m = maskOf(f); this.pclk = (this.pclk & ~m) | ((val << f.lo) & m); }
       else this.pclk = val & 0xFFFF;
+      if (this.hw.epwm) this.hw.epwm.syncRun(this.now());
       return val;
     }
     this.update();

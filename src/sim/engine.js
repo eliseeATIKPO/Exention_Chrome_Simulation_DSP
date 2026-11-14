@@ -30,7 +30,7 @@ const BASEWORDS = new Set(['void', 'char', 'short', 'int', 'long', 'float', 'dou
 const QUALS = new Set(['const', 'volatile', 'static', 'extern', 'register', 'auto', 'inline', 'interrupt', '__interrupt', 'far', '__far', 'near', 'cregister']);
 const KEYWORDS = new Set(['if', 'else', 'while', 'do', 'for', 'switch', 'case', 'default', 'break', 'continue', 'return', 'goto', 'sizeof', 'struct', 'union', 'enum', 'typedef', ...BASEWORDS, ...QUALS]);
 const STMT_BUILTINS = new Set(['EALLOW', 'EDIS', 'DINT', 'EINT', 'ERTM', 'DRTM', 'ESTOP0']);
-const LIB_FUNCS = new Set(['InitSysCtrl', 'InitGpio', 'InitPieCtrl', 'InitPieVectTable', 'InitFlash', 'InitCpuTimers', 'InitAdc', 'DisableDog', 'InitPeripheralClocks', 'InitPll', 'InitXintf', 'InitXintf16Gpio', 'InitECap', 'InitEPwm', 'InitSci', 'InitSpi', 'InitI2C', 'ServiceDog', 'MemCopy', 'ConfigCpuTimer', 'initADC', 'InitADC', 'ADC_cal']);
+const LIB_FUNCS = new Set(['InitSysCtrl', 'InitGpio', 'InitPieCtrl', 'InitPieVectTable', 'InitFlash', 'InitCpuTimers', 'InitAdc', 'DisableDog', 'InitPeripheralClocks', 'InitPll', 'InitXintf', 'InitXintf16Gpio', 'InitECap', 'InitEPwm', 'InitSci', 'InitSpi', 'InitI2C', 'ServiceDog', 'MemCopy', 'ConfigCpuTimer', 'initADC', 'InitADC', 'ADC_cal', 'InitEPwmGpio', 'InitEPwm1Gpio', 'InitEPwm2Gpio', 'InitEPwm3Gpio', 'InitEPwm4Gpio', 'InitEPwm5Gpio', 'InitEPwm6Gpio', 'InitEPwmSyncGpio', 'InitTzGpio']);
 const GPIO_BASES = new Set(['GpioCtrlRegs', 'GpioDataRegs']);
 const GENERIC_BASES = new Set(['SysCtrlRegs', 'PieCtrlRegs', 'PieVectTable', 'CpuTimer0Regs', 'CpuTimer1Regs', 'CpuTimer2Regs', 'CpuTimer0', 'CpuTimer1', 'CpuTimer2', 'AdcRegs', 'AdcMirror', 'EPwm1Regs', 'EPwm2Regs', 'EPwm3Regs', 'EPwm4Regs', 'EPwm5Regs', 'EPwm6Regs', 'ECap1Regs', 'ECap2Regs', 'ECap3Regs', 'ECap4Regs', 'ECap5Regs', 'ECap6Regs', 'EQep1Regs', 'EQep2Regs', 'XIntruptRegs', 'GpioIntRegs', 'SciaRegs', 'ScibRegs', 'ScicRegs', 'SpiaRegs', 'I2caRegs', 'ECanaRegs', 'ECanbRegs', 'McbspaRegs', 'McbspbRegs', 'DmaRegs', 'FlashRegs', 'CsmRegs', 'XintfRegs', 'DevEmuRegs']);
 const isArith = t => t.k === 'int' || t.k === 'float';
@@ -1076,7 +1076,8 @@ class Gen {
     if (GPIO_BASES.has(b.name)) return this.gpioMember(b.name, path, n);
     if (GENERIC_BASES.has(b.name)) {
       const p = b.name + '.' + path.join('.');
-      const chk = typeof AdcSim !== 'undefined' ? AdcSim.checkPath(b.name, path) : null;
+      let chk = typeof EpwmSim !== 'undefined' ? EpwmSim.checkPath(b.name, path) : null;
+      if (!chk && typeof AdcSim !== 'undefined') chk = AdcSim.checkPath(b.name, path);
       if (chk && chk.err) throw new CErr(chk.err, n.tok, { code: '#137', ccs: `struct has no field "${path[path.length - 1]}"` });
       const t = chk && chk.bits === 16 ? named(T.u16, 'Uint16') : named(T.u32, 'Uint32');
       return { c: `__gr(${JSON.stringify(p)})`, t, lv: { k: 'gen', path: p } };
@@ -1388,6 +1389,7 @@ class HW {
     this.ctrlq = {}; this.generic = new Map(); this.eallow = 0;
     this.ext = () => undefined;
     this.adc = typeof AdcSim !== 'undefined' ? new AdcSim.Model(this) : null;
+    this.epwm = typeof EpwmSim !== 'undefined' ? new EpwmSim.Model(this) : null;
     this.listeners = [];
     this.logs = Array.from({ length: 88 }, () => ({ t: [], v: [] }));
     this.last = new Uint8Array(88).fill(9);
@@ -1400,10 +1402,12 @@ class HW {
     for (let n = 0; n < 88; n++) this.pud[n] = n <= 11 ? 1 : 0;
     this.eallow = 0; this.generic.clear(); this.ctrlq = {};
     if (this.adc) this.adc.full();
+    if (this.epwm) this.epwm.full();
     this.touchAll();
   }
   level(n) {
     if (this.mux[n] === 0 && this.dir[n] === 1) return this.lat[n];
+    if (this.mux[n] === 1 && n < 12 && this.epwm) return this.epwm.pin(n);   // fonction EPWMxA / EPWMxB
     const e = this.ext(n);
     if (e === 0 || e === 1) return e;
     if (e === 'PU') return 1;
@@ -1416,7 +1420,7 @@ class HW {
     if (v === 2) { this.warn('flot' + n, `GPIO${n} est lue alors qu'elle est « en l'air » : entrée, pull-up désactivée et rien ne fixe son niveau. La valeur lue est imprévisible (0 ou 1 au hasard).`); return Math.random() < 0.5 ? 0 : 1; }
     return v;
   }
-  touch(n) {
+  touch(n, tAt) {
     const v = this.level(n);
     if (this.mux[n] === 0 && this.dir[n] === 1) {
       const e = this.ext(n);
@@ -1424,7 +1428,7 @@ class HW {
     }
     if (v !== this.last[n]) {
       const old = this.last[n]; this.last[n] = v;
-      const t = this.now(); const L = this.logs[n];
+      const t = tAt != null ? tAt : this.now(); const L = this.logs[n];
       if (L.t.length && L.t[L.t.length - 1] > t) { L.t.push(L.t[L.t.length - 1]); } else L.t.push(t);
       L.v.push(v);
       if (L.t.length > 30000) { L.t.splice(0, 10000); L.v.splice(0, 10000); }
@@ -1494,10 +1498,11 @@ class HW {
     }
     return v;
   }
-  gr(p) { if (this.adc && AdcSim.owns(p)) return this.adc.read(p); return this.generic.get(p) || 0; }
+  gr(p) { if (this.epwm && EpwmSim.owns(p)) return this.epwm.read(p); if (this.adc && AdcSim.owns(p)) return this.adc.read(p); return this.generic.get(p) || 0; }
   gw(p, v) {
+    if (this.epwm && EpwmSim.owns(p)) return this.epwm.write(p, v);
     if (this.adc && AdcSim.owns(p)) return this.adc.write(p, v);
-    const base = p.split('.')[0]; this.warn('gen' + base, `${base} : écriture acceptée mais ce périphérique n'est pas simulé (seuls les GPIO, l'ADC et SysCtrlRegs.PCLKCR0 le sont).`); this.generic.set(p, v); return v;
+    const base = p.split('.')[0]; this.warn('gen' + base, `${base} : écriture acceptée mais ce périphérique n'est pas simulé (seuls les GPIO, l'ADC, les ePWM et SysCtrlRegs.PCLKCR0 / PCLKCR1 le sont).`); this.generic.set(p, v); return v;
   }
 }
 
@@ -1560,7 +1565,8 @@ class Machine {
       *__delay(us) { us = Number(us); if (us > 0) m.vt += us; while (m.vt - m.rt() > 1000) yield 0; if (perfNow() - m.sliceStart > 12 || m.pauseReq) yield 0; return 0; },
       __eallow(v) { hw.eallow = v; },
       __lib(name) {
-        if (hw.adc && hw.adc.lib(name)) return 0;
+        const pw = hw.epwm ? hw.epwm.lib(name) : false;
+        if ((hw.adc && hw.adc.lib(name)) || pw) return 0;
         if (name === 'InitGpio') { const e = hw.eallow; hw.eallow = 1; for (let n = 0; n < 88; n++) { hw.mux[n] = 0; hw.dir[n] = 0; hw.touch(n); } hw.eallow = e; }
         else if (name === 'EINT' || name === 'ERTM') m.host.info && m.host.info('int', 'Les interruptions ne sont pas simulées : EINT / ERTM sont sans effet ici.');
         return 0;

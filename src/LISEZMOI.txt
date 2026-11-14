@@ -17,8 +17,23 @@ OUVRIR
 PROJETS
 - « Libre GPIO » : LED, boutons, roue codeuse (démarre avec un chenillard).
 - « Libre ADC » : VR1 / VR2 sur ADCINA0 / ADCINA1 et capteurs virtuels (démarre avec la lecture de VR1).
+- « ＋ Nouveau projet » (ou Fichier ▸ Nouveau projet CCS) : crée tes propres projets, comme
+  dans Code Composer (départ : main.c minimal, main.c vide ou copie du projet actif).
+  Projet ▸ Renommer / Dupliquer / Supprimer. Onglet « Projet » à droite : notes et modules à
+  brancher (hacheur série + moteur CC, commutateur 4 positions, afficheurs, clavier…).
 - Tes projets sont enregistrés automatiquement dans l'extension, sur ce PC.
   Désinstaller l'extension efface tout : fais Préférences ▸ Données ▸ Exporter avant.
+
+MODULES ePWM (v1.2)
+- Les 6 modules ePWM sont simulés : TBCTL / TBCTR / TBPRD / TBPHS (comptage, décomptage,
+  comptage-décomptage, diviseurs, registres fantômes), CMPA / CMPB, AQCTLA / AQCTLB,
+  AQSFRC / AQCSFRC, temps morts (DBCTL, DBRED, DBFED), synchronisation ePWM1 → ePWM6,
+  trip-zone forcé (TZCTL, TZFRC, TZCLR), ETSEL / ETPS / ETFLG et SOCA / SOCB vers l'ADC.
+- Horloges : SysCtrlRegs.PCLKCR1.bit.EPWMxENCLK (entre EALLOW et EDIS). Sorties sur GPIO0
+  à GPIO11 si GPAMUX1 = 01. LD1 = EPWM5B, LD2 = EPWM6B : leur éclat suit le rapport cyclique.
+- Onglet « ePWM » (en bas) : compteur, CMPA / CMPB et sorties sur deux périodes, fréquence et
+  rapport cyclique mesurés. Analyseur logique : bouton « Signaux… » dans tes projets.
+- Aide ▸ Aide-mémoire ePWM.
 
 METTRE À JOUR
 - Remplace le contenu du dossier par la nouvelle version, puis dans chrome://extensions
@@ -27,8 +42,8 @@ METTRE À JOUR
 LIMITES
 - Simulateur d'entraînement : il ne programme pas la vraie carte.
 - Une partie du C seulement (pas de pointeurs, struct, enum, typedef).
-- Routines d'interruption (PIE) et timers ePWM non exécutés ; les déclenchements
-  SOCA / SOCB / ADCSOC de l'ADC le sont.
+- Routines d'interruption (PIE) non exécutées : les drapeaux (INT_SEQx, SEQx_BSY,
+  ETFLG.INT) le sont. Pas de CPU timers, de chopper (PCCTL) ni de HRPWM.
 - Vérifie toujours ton programme sur la vraie carte.
 
-Documentation complète : https://github.com/eliseeATIKPO/F28335-Simulator
+Documentation complète : https://github.com/eliseeATIKPO/Exention_Chrome_Simulation_DSP
