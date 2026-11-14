@@ -18,7 +18,7 @@
     <button class="mbtn" data-menu="window" aria-haspopup="true" aria-expanded="false">Fenêtre</button>
     <button class="mbtn" data-menu="help" aria-haspopup="true" aria-expanded="false">Aide</button>
     <span class="grow"></span>
-    <span class="target">Cible : TMS320F28335 simulé · GPIO + ADC</span>
+    <span class="target">Cible : TMS320F28335 simulé · GPIO + ADC + ePWM</span>
   </div>
   <div class="toolbar" role="toolbar" aria-label="Outils">
     <button class="tb" id="tb-new" title="Nouveau fichier" aria-label="Nouveau fichier"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 1.5h6l4 4v9H3z" fill="#FFF" stroke="#6B7280"/><path d="M9 1.5v4h4" fill="none" stroke="#6B7280"/><path d="M11.5 9v5M9 11.5h5" stroke="#2E9D3A" stroke-width="1.8"/></svg></button>
@@ -45,7 +45,7 @@
   <div class="work" id="work">
     <aside class="left" aria-label="Projets et débogage">
       <section class="view" id="v-explorer">
-        <div class="vhead">Project Explorer<span class="grow"></span><button class="ib" id="ex-new" title="Nouveau fichier dans le projet actif">+ fichier</button></div>
+        <div class="vhead">Project Explorer<span class="grow"></span><button class="ib" id="ex-newp" title="Nouveau projet CCS (à toi)">+ projet</button><button class="ib" id="ex-new" title="Nouveau fichier dans le projet actif">+ fichier</button></div>
         <div class="vbody"><ul class="tree" id="tree" role="tree" aria-label="Projets"></ul></div>
       </section>
       <section class="view" id="v-debug">
@@ -72,6 +72,7 @@
           <button class="btab" role="tab" data-v="regs">Registres</button>
           <button class="btab" role="tab" data-v="scope">Analyseur logique</button>
           <button class="btab" role="tab" data-v="adc">ADC</button>
+          <button class="btab" role="tab" data-v="epwm">ePWM</button>
           <span class="grow"></span><span class="tools" id="btools"></span>
         </div>
         <div class="bpane" id="bp-console"><div class="console" id="console" role="log" aria-live="polite"></div></div>
@@ -80,12 +81,13 @@
         <div class="bpane" id="bp-expr" hidden></div>
         <div class="bpane" id="bp-regs" hidden></div>
         <div class="bpane" id="bp-adc" hidden></div>
+        <div class="bpane" id="bp-epwm" hidden></div>
         <div class="bpane" id="bp-scope" hidden>
           <div class="scopebar">
             <label for="sc-tb">Base de temps</label><select class="sm" id="sc-tb"></select>
             <label for="sc-mode">Mode</label><select class="sm" id="sc-mode"><option value="roll">Défilement</option><option value="trig">Déclenché</option></select>
             <label for="sc-trig">sur</label><select class="sm" id="sc-trig"></select><select class="sm" id="sc-edge" aria-label="Front"><option value="up">front montant ↑</option><option value="down">front descendant ↓</option></select>
-            <button class="btn" id="sc-freeze" aria-pressed="false">Figer</button><button class="btn" id="sc-clear">Effacer le repère</button>
+            <button class="btn" id="sc-sigs" hidden title="Choisir les broches affichées">Signaux…</button><button class="btn" id="sc-freeze" aria-pressed="false">Figer</button><button class="btn" id="sc-clear">Effacer le repère</button>
             <span class="grow"></span><span class="rd" id="sc-rd"></span>
           </div>
           <div class="scopewrap"><canvas id="scope" aria-label="Chronogrammes des broches du projet"></canvas></div>

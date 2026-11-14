@@ -93,3 +93,20 @@
 .enonce details{margin-top:12px;border:1px solid var(--line);border-radius:4px;padding:6px 10px;background:var(--panel-2)}
 .enonce details summary{cursor:pointer;font-weight:600;font-size:12.5px}
 .enonce pre.sol{font-family:var(--f-mono);font-size:12px;background:var(--code-bg);border:1px solid var(--line-2);padding:8px;overflow:auto;max-height:420px;white-space:pre}
+
+/* ---------- v1.2 : projets personnels et vue ePWM ---------- */
+.extab.newproj{color:var(--accent)}
+.extab.newproj b{font-weight:700}
+.extab.mine small{color:var(--accent)}
+.pwmbar{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:4px 8px;border-bottom:1px solid var(--line-2);font-size:12px}
+.pwmbar .grow{flex:1}
+.pwmbar .rd{font-family:var(--f-mono);color:var(--ink-2);font-size:11.5px}
+.pwmwrap{padding:6px 8px 4px}
+.pwmwrap canvas{display:block;width:100%;height:226px;border-radius:4px}
+.pw-head{display:flex;flex-wrap:wrap;gap:4px 18px;align-items:center;font-size:12.5px}
+.pw-regs td:last-child{line-height:1.9}
+.un-notes{width:100%;min-height:150px;box-sizing:border-box;resize:vertical;border:1px solid var(--line);border-radius:4px;padding:6px 8px;background:var(--code-bg);color:var(--ink);font:13px/1.45 var(--f-ui)}
+.un-mods{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:0 12px;margin:4px 0 8px}
+.un-cfg{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;padding:6px 8px;margin:4px 0;border:1px solid var(--line-2);border-radius:4px;background:var(--panel-2);font-size:12.5px}
+.un-cfg .keyhint{flex-basis:100%;margin:0}
+.un-sigs{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:0 12px}

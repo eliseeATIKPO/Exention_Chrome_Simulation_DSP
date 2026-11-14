@@ -2,7 +2,7 @@
 // (envoyées par la page hôte), puis on charge les scripts dans l'ordre.
 (function () {
   'use strict';
-  const SCRIPTS = ['adc.js', 'engine.js', 'exos.js', 'ui.js'];
+  const SCRIPTS = ['adc.js', 'epwm.js', 'engine.js', 'exos.js', 'ui.js'];
   const host = window.parent !== window ? window.parent : null;
   const waiting = new Map(); let seq = 0;
   const handlers = { external: [], prefs: [] };
