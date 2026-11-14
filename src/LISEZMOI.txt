@@ -46,4 +46,4 @@ LIMITES
   ETFLG.INT) le sont. Pas de CPU timers, de chopper (PCCTL) ni de HRPWM.
 - Vérifie toujours ton programme sur la vraie carte.
 
-Documentation complète : https://github.com/eliseeATIKPO/F28335-Simulator
+Documentation complète : https://github.com/eliseeATIKPO/Exention_Chrome_Simulation_DSP

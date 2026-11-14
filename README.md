@@ -103,7 +103,7 @@ Les deux potentiomètres de la carte sont reliés à ADCINA0 et ADCINA1.
 
 L'extension n'est pas sur le Chrome Web Store. Elle s'installe en mode développeur, une seule fois, en environ deux minutes.
 
-1. Télécharge le fichier `.zip` de la dernière version dans **[Releases](https://github.com/eliseeATIKPO/F28335-Simulator/releases)**.
+1. Télécharge le fichier `.zip` de la dernière version dans **[Releases](https://github.com/eliseeATIKPO/Exention_Chrome_Simulation_DSP/releases)**.
 2. Décompresse-le dans un dossier que tu garderas (par exemple `Documents/F28335-Simulator`). Chrome lit l'extension directement dans ce dossier : ne le supprime pas.
 3. Dans Chrome, va à l'adresse `chrome://extensions`.
 4. Active le **Mode développeur** (interrupteur en haut à droite).
@@ -222,7 +222,7 @@ Tes projets sont conservés.
 
 ## Signaler un problème
 
-Ouvre une **[issue](https://github.com/eliseeATIKPO/F28335-Simulator/issues)** en indiquant :
+Ouvre une **[issue](https://github.com/eliseeATIKPO/Exention_Chrome_Simulation_DSP/issues)** en indiquant :
 - ce que tu attendais et ce qui s'est passé ;
 - le code concerné, ou un exemple réduit qui reproduit le problème ;
 - ta version de Chrome et ton système.
